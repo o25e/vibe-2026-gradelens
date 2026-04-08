@@ -1,11 +1,14 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   ClipboardList, BarChart3, Users, Settings, BookOpen,
   Trophy, GraduationCap, ChevronRight, Bell, Search,
-  LayoutDashboard, FileText, MessageCircle
+  FileText, MessageCircle, LogOut
 } from 'lucide-react'
 import { MOCK_STUDENTS, MOCK_ASSIGNMENT } from '@/lib/mockData'
+import { getCurrentUser, logout } from '@/lib/auth'
+import type { AuthUser } from '@/lib/auth'
 import RubricBuilder from '@/components/instructor/RubricBuilder'
 import GradingTable from '@/components/instructor/GradingTable'
 import GradeOptimizer from '@/components/instructor/GradeOptimizer'
@@ -55,12 +58,17 @@ function SidebarItem({ icon, label, active, onClick, badge }: {
 }
 
 function Sidebar({
-  view, setView, instructorSection, setInstructorSection, studentSection, setStudentSection, students,
+  view,
+  instructorSection, setInstructorSection,
+  studentSection, setStudentSection,
+  students, user, onLogout,
 }: {
-  view: ViewMode; setView: (v: ViewMode) => void
+  view: ViewMode
   instructorSection: InstructorSection; setInstructorSection: (s: InstructorSection) => void
   studentSection: StudentSection; setStudentSection: (s: StudentSection) => void
   students: Student[]
+  user: AuthUser
+  onLogout: () => void
 }) {
   const pendingCount = students.filter(s => s.status === 'pending').length
 
@@ -73,31 +81,23 @@ function Sidebar({
             <GraduationCap size={17} className="text-white" />
           </div>
           <div>
-            <div className="text-sm font-800 text-slate-800 tracking-tight">GradeAI</div>
-            <div className="text-xs text-slate-400 font-500">Auto Grading System</div>
+            <div className="text-sm font-800 text-slate-800 tracking-tight">GradeLens</div>
+            <div className="text-xs text-slate-400 font-500">AI 성적 관리 시스템</div>
           </div>
         </div>
       </div>
 
-      {/* View Toggle */}
+      {/* Role Badge */}
       <div className="px-3 pt-4 pb-2">
-        <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
-          {[
-            { id: 'instructor' as ViewMode, label: '교수', icon: <LayoutDashboard size={12} /> },
-            { id: 'student' as ViewMode, label: '학생', icon: <BookOpen size={12} /> },
-          ].map(({ id, label, icon }) => (
-            <button
-              key={id}
-              onClick={() => setView(id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-700 transition-all duration-200 ${
-                view === id
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {icon}{label}
-            </button>
-          ))}
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${
+          view === 'instructor'
+            ? 'bg-indigo-50 border border-indigo-100'
+            : 'bg-violet-50 border border-violet-100'
+        }`}>
+          <div className={`w-2 h-2 rounded-full ${view === 'instructor' ? 'bg-indigo-500' : 'bg-violet-500'}`} />
+          <span className={`text-xs font-700 ${view === 'instructor' ? 'text-indigo-700' : 'text-violet-700'}`}>
+            {view === 'instructor' ? '교수 · 강사 모드' : '학생 모드'}
+          </span>
         </div>
       </div>
 
@@ -147,24 +147,33 @@ function Sidebar({
       </div>
 
       {/* User */}
-      <div className="px-3 pb-4 border-t border-slate-100 pt-3">
+      <div className="px-3 pb-4 border-t border-slate-100 pt-3 space-y-1">
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
-          <Avatar name={view === 'instructor' ? '이' : '김'} size="sm" />
+          <Avatar name={user.name.charAt(0)} size="sm" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-600 text-slate-800 truncate">
-              {view === 'instructor' ? '이채점 교수님' : '김민준'}
+              {user.name}{user.role === 'instructor' ? ' 교수님' : ''}
             </div>
             <div className="text-xs text-slate-400 truncate">
-              {view === 'instructor' ? '컴퓨터공학과' : '학번 20210342'}
+              {user.role === 'instructor'
+                ? (user.department || '교수')
+                : (user.studentId ? `학번 ${user.studentId}` : (user.department || '학생'))}
             </div>
           </div>
         </div>
+        <button
+          onClick={onLogout}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all duration-150"
+        >
+          <LogOut size={13} />
+          로그아웃
+        </button>
       </div>
     </aside>
   )
 }
 
-function Topbar({ view, section }: { view: ViewMode; section: string }) {
+function Topbar({ section, user }: { section: string; user: AuthUser }) {
   const titles: Record<string, string> = {
     grading: 'AI 채점 관리', stats: '성적 통계', students: '수강생 관리',
     settings: '시스템 설정', report: '나의 성적 리포트', assignments: '과제 목록', ranking: '학급 순위'
@@ -194,30 +203,62 @@ function Topbar({ view, section }: { view: ViewMode; section: string }) {
           <Bell size={16} className="text-slate-500" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
         </button>
-        <Avatar name={view === 'instructor' ? '이' : '김'} />
+        <Avatar name={user.name.charAt(0)} />
       </div>
     </header>
   )
 }
 
 export default function Dashboard() {
-  const [view, setView] = useState<ViewMode>('instructor')
+  const router = useRouter()
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [view, setView] = useState<ViewMode>('student')
   const [instructorSection, setInstructorSection] = useState<InstructorSection>('grading')
   const [studentSection, setStudentSection] = useState<StudentSection>('report')
   const [students, setStudents] = useState<Student[]>(MOCK_STUDENTS)
+
+  useEffect(() => {
+    const currentUser = getCurrentUser()
+    if (!currentUser) {
+      router.replace('/login')
+      return
+    }
+    setUser(currentUser)
+    setView(currentUser.role === 'instructor' ? 'instructor' : 'student')
+  }, [router])
+
+  function handleLogout() {
+    logout()
+    router.replace('/login')
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center animate-pulse">
+            <GraduationCap size={20} className="text-white" />
+          </div>
+          <p className="text-sm text-slate-400">불러오는 중...</p>
+        </div>
+      </div>
+    )
+  }
 
   const currentSection = view === 'instructor' ? instructorSection : studentSection
 
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
-        view={view} setView={setView}
+        view={view}
         instructorSection={instructorSection} setInstructorSection={setInstructorSection}
         studentSection={studentSection} setStudentSection={setStudentSection}
         students={students}
+        user={user}
+        onLogout={handleLogout}
       />
       <div className="flex-1 flex flex-col min-w-0">
-        <Topbar view={view} section={currentSection} />
+        <Topbar section={currentSection} user={user} />
         <main className="flex-1 p-6 overflow-y-auto">
           {view === 'instructor' && instructorSection === 'grading' && (
             <div className="space-y-5 max-w-7xl mx-auto">
