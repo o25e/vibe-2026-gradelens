@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { MessageCircle, X, Send, Bot, Sparkles } from 'lucide-react'
-import { INITIAL_CHAT_MESSAGES, BOT_RESPONSES } from '@/lib/mockData'
+import { BOT_RESPONSES } from '@/lib/mockData'
 import type { ChatMessage } from '@/lib/mockData'
 
 const QUICK_QUESTIONS = [
@@ -24,9 +24,15 @@ function getBotResponse(input: string): string {
   return BOT_RESPONSES.default
 }
 
-export default function ChatBot() {
+export default function ChatBot({ user }: { user: { name: string } }) {
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES)
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
+    {
+      role: 'bot',
+      text: `안녕하세요 ${user.name} 님! 저는 AI 채점 어시스턴트입니다.\n\n점수나 피드백에 대해 궁금한 점이 있으시면 편하게 질문해 주세요. 채점 기준에 근거하여 자세히 설명드리겠습니다.`,
+      timestamp: now(),
+    },
+  ])
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -63,7 +69,7 @@ export default function ChatBot() {
               <div className="text-white text-sm font-700">AI 성적 문의 봇</div>
               <div className="text-indigo-200 text-xs flex items-center gap-1">
                 <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block" />
-                채점 기준 기반 1:1 상담
+                {user.name} 님 · 채점 기준 기반 1:1 상담
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="text-white/70 hover:text-white transition-colors">

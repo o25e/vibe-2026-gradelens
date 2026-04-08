@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { Upload, FileCheck, X, Sparkles, Clock, CheckCircle2, AlertCircle, File, RefreshCw } from 'lucide-react'
+import { Upload, FileCheck, X, Sparkles, Clock, CheckCircle2, AlertCircle, File, RefreshCw, ChevronLeft, BookOpen } from 'lucide-react'
 import { Card, CardHeader, Badge, Button, ProgressBar } from '@/components/ui'
 import type { AuthUser } from '@/lib/auth'
 
@@ -8,6 +8,7 @@ interface RubricItem { id: string; text: string; pts: number; category: string }
 interface Assignment {
   id: string; title: string; description: string; course: string; deadline: string
   rubric_items: RubricItem[]
+  created_at: string
 }
 interface GradeResult {
   ai_score: number
@@ -26,7 +27,8 @@ const GRADING_MESSAGES = [
 ]
 
 export default function AssignmentSubmit({ user }: { user: AuthUser }) {
-  const [assignment, setAssignment] = useState<Assignment | null>(null)
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [content, setContent] = useState('')
@@ -38,14 +40,12 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
   const [result, setResult] = useState<GradeResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchAssignment = useCallback(async () => {
+  const fetchAssignments = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch('/api/assignments')
       const data = await res.json()
-      if (data.assignments?.length > 0) {
-        setAssignment(data.assignments[0])
-      }
+      setAssignments(data.assignments ?? [])
     } catch {
       setError('과제를 불러오는 중 오류가 발생했습니다.')
     } finally {
@@ -53,11 +53,10 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     }
   }, [])
 
-  useEffect(() => { fetchAssignment() }, [fetchAssignment])
+  useEffect(() => { fetchAssignments() }, [fetchAssignments])
 
   const handleFileDrop = (f: File) => {
     setFile({ name: f.name, size: f.size })
-    // If text file, read it as submission content
     if (f.type === 'text/plain' || f.name.endsWith('.txt')) {
       const reader = new FileReader()
       reader.onload = e => setContent(e.target?.result as string ?? '')
@@ -65,8 +64,24 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     }
   }
 
+  const handleSelectAssignment = (a: Assignment) => {
+    setSelectedAssignment(a)
+    setResult(null)
+    setContent('')
+    setFile(null)
+    setError(null)
+  }
+
+  const handleBackToList = () => {
+    setSelectedAssignment(null)
+    setResult(null)
+    setContent('')
+    setFile(null)
+    setError(null)
+  }
+
   const handleSubmit = async () => {
-    if (!assignment) return
+    if (!selectedAssignment) return
     if (!content.trim()) {
       setError('제출 내용을 입력하세요.')
       return
@@ -75,7 +90,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     setSubmitting(true)
     setError(null)
 
-    // Animate grading messages
     const msgInterval = setInterval(() => {
       setGradingMsg(m => (m + 1) % GRADING_MESSAGES.length)
     }, 900)
@@ -85,7 +99,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          assignment_id: assignment.id,
+          assignment_id: selectedAssignment.id,
           content: content.trim(),
           file_name: file?.name ?? null,
         }),
@@ -120,32 +134,99 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     )
   }
 
-  if (!assignment) {
+  // ── Assignment List View ───────────────────────────────────────────────────
+  if (!selectedAssignment) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
-        <Sparkles size={36} className="opacity-30" />
-        <p className="text-sm">현재 등록된 과제가 없습니다.</p>
-        <p className="text-xs">교수님이 과제를 게시하면 여기에 표시됩니다.</p>
-        <Button variant="ghost" size="sm" onClick={fetchAssignment}>
-          <RefreshCw size={13} /> 새로고침
-        </Button>
+      <div className="space-y-4 max-w-3xl mx-auto">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-700 text-slate-800">과제 목록</h2>
+            <p className="text-xs text-slate-400">제출할 과제를 선택하세요</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={fetchAssignments}>
+            <RefreshCw size={13} /> 새로고침
+          </Button>
+        </div>
+
+        {assignments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
+            <BookOpen size={36} className="opacity-30" />
+            <p className="text-sm">현재 등록된 과제가 없습니다.</p>
+            <p className="text-xs">교수님이 과제를 게시하면 여기에 표시됩니다.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {assignments.map((a, idx) => {
+              const deadline = new Date(a.deadline)
+              const now = new Date()
+              const isPast = now > deadline
+              const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
+              const totalPts = a.rubric_items.reduce((s, r) => s + r.pts, 0)
+
+              return (
+                <Card key={a.id}>
+                  <div
+                    className="flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => !isPast && handleSelectAssignment(a)}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span className="text-sm font-800 text-indigo-600">{idx + 1}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-700 text-slate-800 truncate">{a.title}</span>
+                          <Badge variant={isPast ? 'danger' : hoursLeft < 24 ? 'warning' : 'success'}>
+                            <Clock size={9} />
+                            {isPast ? '마감됨' : hoursLeft < 24 ? `${hoursLeft}시간 남음` : `D-${Math.ceil(hoursLeft / 24)}`}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          {a.course} · {totalPts}점 만점 · 루브릭 {a.rubric_items.length}개
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={isPast ? 'ghost' : 'outline'}
+                      className="ml-3 flex-shrink-0"
+                      disabled={isPast}
+                      onClick={() => handleSelectAssignment(a)}
+                    >
+                      {isPast ? '마감됨' : '제출하기 →'}
+                    </Button>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
     )
   }
 
-  const deadline = new Date(assignment.deadline)
+  // ── Submission Form View ───────────────────────────────────────────────────
+  const deadline = new Date(selectedAssignment.deadline)
   const now = new Date()
   const isPast = now > deadline
   const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
-  const totalPts = assignment.rubric_items.reduce((a, r) => a + r.pts, 0)
+  const totalPts = selectedAssignment.rubric_items.reduce((a, r) => a + r.pts, 0)
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
+      {/* Back Button */}
+      <button
+        onClick={handleBackToList}
+        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
+      >
+        <ChevronLeft size={15} /> 과제 목록으로
+      </button>
+
       {/* Assignment Info */}
       <Card>
         <CardHeader
-          title={assignment.title}
-          subtitle={assignment.course}
+          title={selectedAssignment.title}
+          subtitle={selectedAssignment.course}
           actions={
             <Badge variant={isPast ? 'danger' : hoursLeft < 24 ? 'warning' : 'success'}>
               <Clock size={10} />
@@ -154,17 +235,16 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
           }
         />
         <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 text-sm text-slate-600 leading-relaxed mb-4">
-          {assignment.description}
+          {selectedAssignment.description}
         </div>
 
-        {/* Rubric preview */}
         <div>
           <div className="text-xs font-700 text-slate-500 mb-2">
             <Sparkles size={11} className="inline mr-1 text-indigo-500" />
             AI 채점 기준 ({totalPts}점 만점)
           </div>
           <div className="grid grid-cols-2 gap-1.5">
-            {assignment.rubric_items.map(r => (
+            {selectedAssignment.rubric_items.map(r => (
               <div key={r.id} className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1.5">
                 <span className="text-xs text-indigo-700 font-500 truncate">{r.text}</span>
                 <span className="text-xs font-800 text-indigo-600 ml-2 flex-shrink-0">{r.pts}점</span>
@@ -193,7 +273,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
           <ProgressBar value={result.ai_score} max={totalPts} color="#10b981" />
 
-          {/* Section 1 */}
           <div className="mt-4 p-3 bg-white/70 border border-emerald-100 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-5 h-5 bg-indigo-600 rounded-md flex items-center justify-center">
@@ -214,7 +293,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
             </div>
           </div>
 
-          {/* Section 2 */}
           <div className="mt-3 p-3 bg-white/70 border border-emerald-100 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-5 h-5 bg-emerald-600 rounded-md flex items-center justify-center">
@@ -237,6 +315,9 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
           <div className="mt-3 flex gap-2">
             <Button variant="ghost" size="sm" onClick={reset}>재제출하기</Button>
+            <Button variant="ghost" size="sm" onClick={handleBackToList}>
+              <ChevronLeft size={13} /> 과제 목록으로
+            </Button>
             <span className="text-xs text-slate-400 self-center">성적 리포트 탭에서 상세 내역을 확인하세요.</span>
           </div>
         </Card>
@@ -263,7 +344,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
             </div>
           )}
 
-          {/* Text area */}
           <div className="mb-3">
             <label className="block text-xs font-600 text-slate-500 mb-1.5">
               과제 내용 <span className="text-red-500">*</span>
@@ -283,7 +363,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
             </div>
           </div>
 
-          {/* File attach (optional) */}
           <div className="mb-4">
             <label className="block text-xs font-600 text-slate-500 mb-1.5">
               파일 첨부 <span className="text-slate-400 font-400">(선택 · .txt 파일은 내용 자동 입력)</span>
@@ -321,7 +400,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
             )}
           </div>
 
-          {/* Submit button / grading progress */}
           {submitting ? (
             <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
               <div className="flex items-center gap-3 mb-2">

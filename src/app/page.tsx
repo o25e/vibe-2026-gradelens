@@ -3,8 +3,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ClipboardList, BarChart3, Users, Settings, BookOpen,
-  Trophy, GraduationCap, ChevronRight, Bell, Search,
-  FileText, LogOut, CheckCircle2, Calendar
+  Trophy, GraduationCap, ChevronRight, ChevronLeft, Bell, Search,
+  FileText, LogOut, CheckCircle2, Calendar, Plus, Clock
 } from 'lucide-react'
 import { MOCK_STUDENTS, MOCK_ASSIGNMENT, INITIAL_RUBRICS } from '@/lib/mockData'
 import { getCurrentUser, logout } from '@/lib/auth'
@@ -21,6 +21,16 @@ import type { Student } from '@/lib/mockData'
 type ViewMode = 'instructor' | 'student'
 type InstructorSection = 'grading' | 'stats' | 'students' | 'settings'
 type StudentSection = 'report' | 'assignments' | 'ranking'
+type InstructorGradingView = 'list' | 'detail' | 'create'
+
+interface AssignmentItem {
+  id: string
+  title: string
+  course: string
+  deadline: string
+  created_at: string
+  is_active: number
+}
 
 const INSTRUCTOR_NAV: { id: InstructorSection; label: string; icon: React.ReactNode; sub?: string }[] = [
   { id: 'grading', label: 'AI 채점 관리', icon: <ClipboardList size={16} />, sub: '과제 · 루브릭 · 검토' },
@@ -33,6 +43,93 @@ const STUDENT_NAV: { id: StudentSection; label: string; icon: React.ReactNode }[
   { id: 'assignments', label: '과제 목록', icon: <BookOpen size={16} /> },
   { id: 'ranking', label: '학급 순위', icon: <Trophy size={16} /> },
 ]
+
+// ── Instructor Assignment List ────────────────────────────────────────────────
+function InstructorAssignmentList({
+  assignments,
+  onSelect,
+  onCreateNew,
+}: {
+  assignments: AssignmentItem[]
+  onSelect: (id: string) => void
+  onCreateNew: () => void
+}) {
+  return (
+    <div className="space-y-4 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-700 text-slate-800">과제 목록</h2>
+          <p className="text-xs text-slate-400">과제를 선택하여 AI 채점 관리를 시작하세요</p>
+        </div>
+        <button
+          onClick={onCreateNew}
+          className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white text-sm font-600 rounded-xl hover:bg-indigo-700 transition-colors"
+        >
+          <Plus size={14} /> 새 과제 만들기
+        </button>
+      </div>
+
+      {assignments.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-3">
+          <ClipboardList size={36} className="opacity-30" />
+          <p className="text-sm">등록된 과제가 없습니다.</p>
+          <button
+            onClick={onCreateNew}
+            className="text-sm text-indigo-600 hover:underline"
+          >
+            첫 번째 과제 만들기 →
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {assignments.map((a, idx) => {
+            const deadline = new Date(a.deadline)
+            const now = new Date()
+            const isPast = now > deadline
+            const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
+            return (
+              <div
+                key={a.id}
+                onClick={() => onSelect(a.id)}
+                className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center justify-between cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-800 text-indigo-600">{idx + 1}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-700 text-slate-800 truncate">{a.title}</span>
+                      <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${
+                        isPast ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+                      }`}>
+                        {isPast ? '마감됨' : '진행 중'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+                      <span>{a.course}</span>
+                      <span>·</span>
+                      <Clock size={10} className="inline" />
+                      <span>
+                        {isPast
+                          ? `마감 ${new Date(a.deadline).toLocaleDateString('ko-KR')}`
+                          : hoursLeft < 24 ? `${hoursLeft}시간 남음` : `D-${Math.ceil(hoursLeft / 24)}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 ml-4">
+                  <span className="text-xs text-indigo-600 font-600">채점 관리 →</span>
+                  <ChevronRight size={14} className="text-slate-300" />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Info Bar ─────────────────────────────────────────────────────────────────
 function DashboardInfoBar({
@@ -314,9 +411,11 @@ export default function Dashboard() {
   const [studentSection, setStudentSection] = useState<StudentSection>('report')
   const [students] = useState<Student[]>(MOCK_STUDENTS)
 
-  // Track active assignment ID (set when instructor publishes)
+  // Track active assignment ID (set when instructor selects or publishes)
   const [currentAssignmentId, setCurrentAssignmentId] = useState<string | undefined>(undefined)
   const [courseName, setCourseName] = useState(MOCK_ASSIGNMENT.course)
+  const [allAssignments, setAllAssignments] = useState<AssignmentItem[]>([])
+  const [instructorGradingView, setInstructorGradingView] = useState<InstructorGradingView>('list')
 
   useEffect(() => {
     getCurrentUser().then(currentUser => {
@@ -326,18 +425,19 @@ export default function Dashboard() {
     })
   }, [router])
 
-  // On mount, check if there's already an active assignment
-  useEffect(() => {
+  const refreshAssignments = () => {
     fetch('/api/assignments')
       .then(r => r.json())
       .then(data => {
         if (data.assignments?.length > 0) {
-          setCurrentAssignmentId(data.assignments[0].id)
+          setAllAssignments(data.assignments)
           setCourseName(data.assignments[0].course ?? MOCK_ASSIGNMENT.course)
         }
       })
       .catch(() => {})
-  }, [])
+  }
+
+  useEffect(() => { refreshAssignments() }, [])
 
   const handleLogout = async () => {
     await logout()
@@ -346,6 +446,13 @@ export default function Dashboard() {
 
   const handleAssignmentPublished = (id: string) => {
     setCurrentAssignmentId(id)
+    refreshAssignments()
+    setInstructorGradingView('detail')
+  }
+
+  const handleSetInstructorSection = (s: InstructorSection) => {
+    setInstructorSection(s)
+    if (s === 'grading') setInstructorGradingView('list')
   }
 
   if (!user) {
@@ -367,7 +474,7 @@ export default function Dashboard() {
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
         view={view}
-        instructorSection={instructorSection} setInstructorSection={setInstructorSection}
+        instructorSection={instructorSection} setInstructorSection={handleSetInstructorSection}
         studentSection={studentSection} setStudentSection={setStudentSection}
         students={students}
         user={user}
@@ -380,11 +487,37 @@ export default function Dashboard() {
         <main className="flex-1 p-6 overflow-y-auto">
 
           {/* ── Instructor ── */}
-          {view === 'instructor' && instructorSection === 'grading' && (
+          {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'list' && (
+            <InstructorAssignmentList
+              assignments={allAssignments}
+              onSelect={id => {
+                setCurrentAssignmentId(id)
+                setInstructorGradingView('detail')
+              }}
+              onCreateNew={() => setInstructorGradingView('create')}
+            />
+          )}
+          {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'create' && (
             <div className="space-y-5 max-w-7xl mx-auto">
+              <button
+                onClick={() => setInstructorGradingView('list')}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
+              >
+                <ChevronLeft size={15} /> 과제 목록으로
+              </button>
               <RubricBuilder onPublished={handleAssignmentPublished} />
+            </div>
+          )}
+          {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'detail' && (
+            <div className="space-y-5 max-w-7xl mx-auto">
+              <button
+                onClick={() => setInstructorGradingView('list')}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
+              >
+                <ChevronLeft size={15} /> 과제 목록으로
+              </button>
               <GradingTable assignmentId={currentAssignmentId} />
-              <GradeOptimizer students={students} />
+              <GradeOptimizer assignmentId={currentAssignmentId} />
             </div>
           )}
           {view === 'instructor' && instructorSection !== 'grading' && (
@@ -415,7 +548,7 @@ export default function Dashboard() {
           )}
         </main>
       </div>
-      {view === 'student' && <ChatBot />}
+      {view === 'student' && <ChatBot user={user} />}
     </div>
   )
 }

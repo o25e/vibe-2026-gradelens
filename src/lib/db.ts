@@ -70,6 +70,13 @@ db.exec(`
     graded_at       TEXT DEFAULT (datetime('now')),
     confirmed_at    TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS grade_settings (
+    id            TEXT PRIMARY KEY,
+    assignment_id TEXT NOT NULL UNIQUE REFERENCES assignments(id) ON DELETE CASCADE,
+    cuts          TEXT NOT NULL,
+    updated_at    TEXT DEFAULT (datetime('now'))
+  );
 `)
 
 export default db

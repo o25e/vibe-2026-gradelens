@@ -1,6 +1,9 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { CheckCircle2, Bell, Flag, AlertCircle, RefreshCw, Sparkles } from 'lucide-react'
+import {
+  CheckCircle2, Bell, Flag, AlertCircle, RefreshCw, Sparkles,
+  FileText, Image, File, ChevronDown, ChevronUp, Eye,
+} from 'lucide-react'
 import { Button, Card, CardHeader, Badge, Avatar, Modal, StatCard } from '@/components/ui'
 
 type GradeStatus = 'confirmed' | 'pending' | 'flagged'
@@ -12,6 +15,8 @@ interface Submission {
   department: string
   submitted_at: string
   word_count: number
+  content: string | null
+  file_name: string | null
   ai_score: number | null
   confirmed_score: number | null
   grade_status: GradeStatus
@@ -26,6 +31,106 @@ const statusConfig: Record<GradeStatus, { label: string; variant: 'success' | 'w
   flagged:   { label: '요주의', variant: 'danger' },
 }
 
+// ── File type helpers ────────────────────────────────────────────────────────
+function getFileType(fileName: string): 'image' | 'pdf' | 'text' | 'other' {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
+  if (ext === 'pdf') return 'pdf'
+  if (['txt', 'md'].includes(ext)) return 'text'
+  return 'other'
+}
+
+function FilePreview({ fileName }: { fileName: string }) {
+  const type = getFileType(fileName)
+  const icons: Record<typeof type, React.ReactNode> = {
+    image: <Image size={14} className="text-emerald-500" />,
+    pdf:   <FileText size={14} className="text-red-500" />,
+    text:  <FileText size={14} className="text-indigo-500" />,
+    other: <File size={14} className="text-slate-400" />,
+  }
+  const labels: Record<typeof type, string> = {
+    image: '이미지 파일',
+    pdf:   'PDF 문서',
+    text:  '텍스트 파일',
+    other: '첨부 파일',
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+      <div className="w-7 h-7 bg-white border border-slate-200 rounded-md flex items-center justify-center flex-shrink-0">
+        {icons[type]}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-600 text-slate-700 truncate">{fileName}</div>
+        <div className="text-xs text-slate-400">{labels[type]}</div>
+      </div>
+      {(type === 'image' || type === 'pdf') && (
+        <div className="flex items-center gap-1 text-xs text-slate-400 bg-slate-100 rounded px-2 py-1 flex-shrink-0">
+          <Eye size={11} />
+          <span>파일 서버 연동 시 미리보기 가능</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Submission content viewer (collapsible) ──────────────────────────────────
+function SubmissionContentViewer({ content, fileName }: { content: string | null; fileName: string | null }) {
+  const [expanded, setExpanded] = useState(true)
+
+  const hasContent = content && content.trim().length > 0
+  const hasFile = !!fileName
+
+  if (!hasContent && !hasFile) {
+    return (
+      <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-400">
+        <FileText size={13} />
+        제출된 내용이 없습니다.
+      </div>
+    )
+  }
+
+  return (
+    <div className="border border-slate-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Eye size={13} className="text-indigo-500" />
+          <span className="text-xs font-700 text-slate-700">제출 내용 보기</span>
+          {hasContent && (
+            <span className="text-xs text-slate-400">
+              ({content!.trim().split(/\s+/).filter(Boolean).length}자)
+            </span>
+          )}
+        </div>
+        {expanded
+          ? <ChevronUp size={14} className="text-slate-400" />
+          : <ChevronDown size={14} className="text-slate-400" />}
+      </button>
+
+      {expanded && (
+        <div className="p-4 space-y-3 bg-white">
+          {hasFile && <FilePreview fileName={fileName!} />}
+
+          {hasContent ? (
+            <div
+              className="text-xs text-slate-700 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 max-h-52 overflow-y-auto"
+              style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            >
+              {content}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 italic">텍스트 내용이 없습니다.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
 interface Props {
   assignmentId?: string
 }
@@ -106,7 +211,7 @@ export default function GradingTable({ assignmentId }: Props) {
       <Card>
         <div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-3">
           <Sparkles size={28} className="opacity-30" />
-          <p className="text-sm">과제를 게시하면 제출 현황이 여기에 표시됩니다.</p>
+          <p className="text-sm">과제를 선택하면 제출 현황이 여기에 표시됩니다.</p>
         </div>
       </Card>
     )
@@ -136,7 +241,11 @@ export default function GradingTable({ assignmentId }: Props) {
                   <Button variant="success" size="sm" onClick={bulkApprove}>
                     <CheckCircle2 size={13} /> 일괄 승인
                   </Button>
-                  <Button variant={notified ? 'ghost' : 'outline'} size="sm" onClick={() => { setNotified(true); setTimeout(() => setNotified(false), 3000) }}>
+                  <Button
+                    variant={notified ? 'ghost' : 'outline'}
+                    size="sm"
+                    onClick={() => { setNotified(true); setTimeout(() => setNotified(false), 3000) }}
+                  >
                     <Bell size={13} /> {notified ? '공지 완료!' : '성적 공지'}
                   </Button>
                 </>
@@ -173,13 +282,26 @@ export default function GradingTable({ assignmentId }: Props) {
                 </thead>
                 <tbody>
                   {submissions.map((s, idx) => (
-                    <tr key={s.id} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${idx === submissions.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr
+                      key={s.id}
+                      className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer ${idx === submissions.length - 1 ? 'border-b-0' : ''}`}
+                      onClick={() => openModal(s)}
+                    >
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
                           <Avatar name={s.student_name} />
                           <div>
                             <div className="text-sm font-600 text-slate-800">{s.student_name}</div>
-                            <div className="text-xs text-slate-400">{s.student_number}</div>
+                            <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                              <span>{s.student_number}</span>
+                              {s.file_name && (
+                                <>
+                                  <span>·</span>
+                                  <File size={10} className="text-slate-400" />
+                                  <span className="truncate max-w-[80px]">{s.file_name}</span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -202,7 +324,7 @@ export default function GradingTable({ assignmentId }: Props) {
                       <td className="px-3 py-2.5 max-w-[220px]">
                         <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{s.feedback_short ?? '—'}</p>
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => openModal(s)}
                           className="text-xs font-600 text-indigo-600 hover:text-indigo-800 px-2.5 py-1 rounded-md hover:bg-indigo-50 transition-colors"
@@ -219,6 +341,7 @@ export default function GradingTable({ assignmentId }: Props) {
         )}
       </Card>
 
+      {/* ── Review Modal ── */}
       <Modal
         open={!!modal}
         onClose={() => setModal(null)}
@@ -238,6 +361,13 @@ export default function GradingTable({ assignmentId }: Props) {
       >
         {modal && (
           <div className="space-y-4">
+            {/* ── 제출 내용 ── */}
+            <SubmissionContentViewer
+              content={modal.content}
+              fileName={modal.file_name}
+            />
+
+            {/* ── 채점 ── */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-600 text-slate-500 mb-1.5">AI 제안 점수</label>
@@ -263,11 +393,16 @@ export default function GradingTable({ assignmentId }: Props) {
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
                 <div className="text-xs font-700 text-slate-500 mb-2">루브릭별 점수</div>
                 {modal.rubric_scores.map((r, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs">
-                    <span className="text-slate-600 truncate flex-1">{r.rubric_text}</span>
-                    <span className={`font-700 ml-2 flex-shrink-0 ${r.score === r.max_pts ? 'text-emerald-600' : r.score >= r.max_pts * 0.8 ? 'text-indigo-600' : 'text-amber-600'}`}>
-                      {r.score}/{r.max_pts}
-                    </span>
+                  <div key={i} className="space-y-0.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 truncate flex-1">{r.rubric_text}</span>
+                      <span className={`font-700 ml-2 flex-shrink-0 ${r.score === r.max_pts ? 'text-emerald-600' : r.score >= r.max_pts * 0.8 ? 'text-indigo-600' : 'text-amber-600'}`}>
+                        {r.score}/{r.max_pts}
+                      </span>
+                    </div>
+                    {r.reason && (
+                      <p className="text-xs text-slate-400 pl-1 leading-snug">{r.reason}</p>
+                    )}
                   </div>
                 ))}
               </div>

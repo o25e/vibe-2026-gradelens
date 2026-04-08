@@ -121,13 +121,13 @@ export function Modal({ open, onClose, title, subtitle, children, footer }: {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
-        <div className="p-6 border-b border-slate-100">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-slate-100 flex-shrink-0">
           <h2 className="text-base font-700 text-slate-800">{title}</h2>
           {subtitle && <p className="text-sm text-slate-400 mt-1">{subtitle}</p>}
         </div>
-        <div className="p-6">{children}</div>
-        {footer && <div className="px-6 pb-5 flex justify-end gap-2">{footer}</div>}
+        <div className="p-6 overflow-y-auto flex-1">{children}</div>
+        {footer && <div className="px-6 pb-5 flex justify-end gap-2 flex-shrink-0 border-t border-slate-100 pt-4">{footer}</div>}
       </div>
     </div>
   )

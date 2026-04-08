@@ -61,8 +61,6 @@ export async function POST(req: NextRequest) {
   `)
 
   db.transaction(() => {
-    // Deactivate previous assignments from this instructor
-    db.prepare('UPDATE assignments SET is_active = 0 WHERE instructor_id = ?').run(session.id)
     insertAssignment.run(assignmentId, title, description, course, deadline, session.id)
     rubric_items.forEach((r: { text: string; pts: number; category: string }, i: number) => {
       insertRubric.run(randomUUID(), assignmentId, r.text, r.pts, r.category ?? 'logic', i)
