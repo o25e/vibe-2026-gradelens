@@ -1,0 +1,360 @@
+'use client'
+import { useState, useEffect, useCallback } from 'react'
+import { Upload, FileCheck, X, Sparkles, Clock, CheckCircle2, AlertCircle, File, RefreshCw } from 'lucide-react'
+import { Card, CardHeader, Badge, Button, ProgressBar } from '@/components/ui'
+import type { AuthUser } from '@/lib/auth'
+
+interface RubricItem { id: string; text: string; pts: number; category: string }
+interface Assignment {
+  id: string; title: string; description: string; course: string; deadline: string
+  rubric_items: RubricItem[]
+}
+interface GradeResult {
+  ai_score: number
+  status: string
+  rubric_scores: { rubric_text: string; max_pts: number; score: number; reason: string }[]
+  section1_summary: string
+  section2_items: { action: string; impact: string; category: string }[]
+  feedback_short: string
+}
+
+const GRADING_MESSAGES = [
+  '문서 분석 중...',
+  '채점 기준 매칭 중...',
+  '항목별 점수 산출 중...',
+  '피드백 리포트 생성 중...',
+]
+
+export default function AssignmentSubmit({ user }: { user: AuthUser }) {
+  const [assignment, setAssignment] = useState<Assignment | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const [content, setContent] = useState('')
+  const [file, setFile] = useState<{ name: string; size: number } | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  const [submitting, setSubmitting] = useState(false)
+  const [gradingMsg, setGradingMsg] = useState(0)
+  const [result, setResult] = useState<GradeResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchAssignment = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/assignments')
+      const data = await res.json()
+      if (data.assignments?.length > 0) {
+        setAssignment(data.assignments[0])
+      }
+    } catch {
+      setError('과제를 불러오는 중 오류가 발생했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchAssignment() }, [fetchAssignment])
+
+  const handleFileDrop = (f: File) => {
+    setFile({ name: f.name, size: f.size })
+    // If text file, read it as submission content
+    if (f.type === 'text/plain' || f.name.endsWith('.txt')) {
+      const reader = new FileReader()
+      reader.onload = e => setContent(e.target?.result as string ?? '')
+      reader.readAsText(f)
+    }
+  }
+
+  const handleSubmit = async () => {
+    if (!assignment) return
+    if (!content.trim()) {
+      setError('제출 내용을 입력하세요.')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+
+    // Animate grading messages
+    const msgInterval = setInterval(() => {
+      setGradingMsg(m => (m + 1) % GRADING_MESSAGES.length)
+    }, 900)
+
+    try {
+      const res = await fetch('/api/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignment_id: assignment.id,
+          content: content.trim(),
+          file_name: file?.name ?? null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? '제출에 실패했습니다.')
+      setResult(data.grade)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      clearInterval(msgInterval)
+      setSubmitting(false)
+    }
+  }
+
+  const reset = () => {
+    setResult(null)
+    setContent('')
+    setFile(null)
+    setError(null)
+    setGradingMsg(0)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48 text-slate-400">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm">과제 불러오는 중...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!assignment) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
+        <Sparkles size={36} className="opacity-30" />
+        <p className="text-sm">현재 등록된 과제가 없습니다.</p>
+        <p className="text-xs">교수님이 과제를 게시하면 여기에 표시됩니다.</p>
+        <Button variant="ghost" size="sm" onClick={fetchAssignment}>
+          <RefreshCw size={13} /> 새로고침
+        </Button>
+      </div>
+    )
+  }
+
+  const deadline = new Date(assignment.deadline)
+  const now = new Date()
+  const isPast = now > deadline
+  const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
+  const totalPts = assignment.rubric_items.reduce((a, r) => a + r.pts, 0)
+
+  return (
+    <div className="space-y-4 max-w-3xl mx-auto">
+      {/* Assignment Info */}
+      <Card>
+        <CardHeader
+          title={assignment.title}
+          subtitle={assignment.course}
+          actions={
+            <Badge variant={isPast ? 'danger' : hoursLeft < 24 ? 'warning' : 'success'}>
+              <Clock size={10} />
+              {isPast ? '마감됨' : hoursLeft < 24 ? `${hoursLeft}시간 남음` : `D-${Math.ceil(hoursLeft / 24)}`}
+            </Badge>
+          }
+        />
+        <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 text-sm text-slate-600 leading-relaxed mb-4">
+          {assignment.description}
+        </div>
+
+        {/* Rubric preview */}
+        <div>
+          <div className="text-xs font-700 text-slate-500 mb-2">
+            <Sparkles size={11} className="inline mr-1 text-indigo-500" />
+            AI 채점 기준 ({totalPts}점 만점)
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {assignment.rubric_items.map(r => (
+              <div key={r.id} className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1.5">
+                <span className="text-xs text-indigo-700 font-500 truncate">{r.text}</span>
+                <span className="text-xs font-800 text-indigo-600 ml-2 flex-shrink-0">{r.pts}점</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {/* Result Panel */}
+      {result && (
+        <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-11 h-11 bg-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 size={22} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-700 text-emerald-800">AI 채점 완료!</div>
+              <div className="text-xs text-emerald-600">교수님 검토 후 최종 확정됩니다</div>
+            </div>
+            <div className="text-right">
+              <div className="text-4xl font-900 text-emerald-700">{result.ai_score}점</div>
+              <div className="text-xs text-emerald-500">/{totalPts}점</div>
+            </div>
+          </div>
+
+          <ProgressBar value={result.ai_score} max={totalPts} color="#10b981" />
+
+          {/* Section 1 */}
+          <div className="mt-4 p-3 bg-white/70 border border-emerald-100 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-5 h-5 bg-indigo-600 rounded-md flex items-center justify-center">
+                <span className="text-white text-xs font-800">1</span>
+              </div>
+              <span className="text-xs font-700 text-slate-700">점수 산출 근거</span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed mb-3">{result.section1_summary}</p>
+            <div className="space-y-1.5">
+              {result.rubric_scores.map((r, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-500 flex-1 truncate">{r.rubric_text}</span>
+                  <span className={`font-700 flex-shrink-0 ${r.score === r.max_pts ? 'text-emerald-600' : r.score >= r.max_pts * 0.8 ? 'text-indigo-600' : 'text-amber-600'}`}>
+                    {r.score}/{r.max_pts}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Section 2 */}
+          <div className="mt-3 p-3 bg-white/70 border border-emerald-100 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-5 h-5 bg-emerald-600 rounded-md flex items-center justify-center">
+                <span className="text-white text-xs font-800">2</span>
+              </div>
+              <span className="text-xs font-700 text-slate-700">성적 향상 가이드</span>
+            </div>
+            <div className="space-y-1.5">
+              {result.section2_items.map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="text-emerald-600 font-800 flex-shrink-0">{i + 1}.</span>
+                  <div>
+                    <span className="text-slate-700">{item.action}</span>
+                    <span className="ml-2 text-emerald-600 font-700">→ {item.impact}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <Button variant="ghost" size="sm" onClick={reset}>재제출하기</Button>
+            <span className="text-xs text-slate-400 self-center">성적 리포트 탭에서 상세 내역을 확인하세요.</span>
+          </div>
+        </Card>
+      )}
+
+      {/* Submission Form */}
+      {!result && (
+        <Card>
+          <CardHeader
+            title="과제 제출"
+            subtitle={`${user.name} 님의 제출 · AI가 즉시 채점합니다`}
+            actions={
+              <span className="inline-flex items-center gap-1 bg-indigo-600 text-white text-xs font-700 px-2.5 py-1 rounded-full">
+                <Sparkles size={10} /> AI 자동 채점
+              </span>
+            }
+          />
+
+          {error && (
+            <div className="mb-3 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
+              <AlertCircle size={13} />
+              {error}
+              <button className="ml-auto" onClick={() => setError(null)}><X size={13} /></button>
+            </div>
+          )}
+
+          {/* Text area */}
+          <div className="mb-3">
+            <label className="block text-xs font-600 text-slate-500 mb-1.5">
+              과제 내용 <span className="text-red-500">*</span>
+              <span className="text-slate-400 font-400 ml-1">(직접 입력하거나 붙여넣기)</span>
+            </label>
+            <textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              rows={10}
+              disabled={submitting}
+              placeholder="과제 내용을 여기에 붙여넣으세요. AI가 채점 기준에 따라 자동 평가합니다."
+              className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white text-slate-700 leading-relaxed resize-none disabled:opacity-60"
+            />
+            <div className="flex justify-between mt-1 text-xs text-slate-400">
+              <span>{content.trim().split(/\s+/).filter(Boolean).length}자 입력됨</span>
+              <span>최소 500자 권장</span>
+            </div>
+          </div>
+
+          {/* File attach (optional) */}
+          <div className="mb-4">
+            <label className="block text-xs font-600 text-slate-500 mb-1.5">
+              파일 첨부 <span className="text-slate-400 font-400">(선택 · .txt 파일은 내용 자동 입력)</span>
+            </label>
+            {file ? (
+              <div className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                <File size={14} className="text-indigo-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-600 text-slate-700 truncate">{file.name}</div>
+                  <div className="text-xs text-slate-400">{(file.size / 1024).toFixed(1)} KB</div>
+                </div>
+                {!submitting && (
+                  <button onClick={() => setFile(null)} className="text-slate-400 hover:text-red-500 transition-colors">
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <label
+                onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFileDrop(f) }}
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
+                  dragOver ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'
+                }`}
+              >
+                <input type="file" accept=".pdf,.doc,.docx,.hwp,.txt" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFileDrop(f) }} />
+                <Upload size={16} className="text-slate-300" />
+                <div>
+                  <div className="text-xs font-600 text-slate-500">파일 드래그 또는 클릭</div>
+                  <div className="text-xs text-slate-400">PDF · DOC · HWP · TXT</div>
+                </div>
+              </label>
+            )}
+          </div>
+
+          {/* Submit button / grading progress */}
+          {submitting ? (
+            <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                <div>
+                  <div className="text-sm font-700 text-indigo-700">AI 채점 진행 중...</div>
+                  <div className="text-xs text-indigo-500 transition-all">{GRADING_MESSAGES[gradingMsg]}</div>
+                </div>
+                <span className="inline-flex items-center gap-1 ml-auto bg-indigo-600 text-white text-xs font-700 px-2.5 py-1 rounded-full">
+                  <Sparkles size={10} /> AI 분석
+                </span>
+              </div>
+              <div className="h-1.5 bg-indigo-200 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-600 rounded-full animate-pulse" style={{ width: '70%' }} />
+              </div>
+            </div>
+          ) : (
+            <Button
+              onClick={handleSubmit}
+              className="w-full justify-center"
+              disabled={!content.trim() || isPast}
+            >
+              <Sparkles size={14} />
+              {isPast ? '마감된 과제입니다' : 'AI 채점 제출하기'}
+            </Button>
+          )}
+
+          <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
+            <FileCheck size={12} />
+            제출 후 AI가 루브릭 기준에 따라 즉시 채점하고 상세 피드백을 제공합니다.
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}

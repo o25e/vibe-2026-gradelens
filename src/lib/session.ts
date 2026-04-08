@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 export interface SessionPayload {
   id: string
@@ -42,9 +42,14 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
   }
 }
 
-export async function getSession(): Promise<SessionPayload | null> {
-  const cookieStore = cookies()
-  const token = cookieStore.get(COOKIE_NAME)?.value
+export async function getSession(req?: NextRequest): Promise<SessionPayload | null> {
+  let token: string | undefined
+  if (req) {
+    token = req.cookies.get(COOKIE_NAME)?.value
+  } else {
+    const cookieStore = cookies()
+    token = cookieStore.get(COOKIE_NAME)?.value
+  }
   if (!token) return null
   return verifySession(token)
 }
