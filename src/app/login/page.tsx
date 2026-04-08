@@ -49,7 +49,6 @@ export default function LoginPage() {
   const [role, setRole] = useState<Role>('student')
   const [showPw, setShowPw] = useState(false)
 
-  // form fields
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -62,7 +61,6 @@ export default function LoginPage() {
   function resetForm() {
     setName(''); setEmail(''); setPassword(''); setDepartment(''); setStudentId(''); setError('')
   }
-
   function switchTab(t: Tab) { setTab(t); resetForm() }
 
   async function handleSubmit(e: FormEvent) {
@@ -70,22 +68,24 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    await new Promise(r => setTimeout(r, 400)) // slight UX delay
-
     if (tab === 'login') {
-      const { error: err } = login(email, password)
-      if (err) { setError(err); setLoading(false); return }
+      const { ok, error: err } = await login(email, password)
+      if (!ok) { setError(err ?? '로그인에 실패했습니다.'); setLoading(false); return }
     } else {
       if (!name.trim()) { setError('이름을 입력해주세요.'); setLoading(false); return }
       if (password.length < 6) { setError('비밀번호는 6자 이상이어야 합니다.'); setLoading(false); return }
-      const { error: err } = signup({ name: name.trim(), email, password, role, department, studentId })
-      if (err) { setError(err); setLoading(false); return }
+      const { ok, error: err } = await signup({
+        name: name.trim(), email, password, role,
+        department: department.trim() || undefined,
+        studentId: role === 'student' ? (studentId.trim() || undefined) : undefined,
+      })
+      if (!ok) { setError(err ?? '회원가입에 실패했습니다.'); setLoading(false); return }
     }
 
     router.push('/')
   }
 
-  const fillDemo = (r: Role) => {
+  function fillDemo(r: Role) {
     setTab('login')
     setEmail(r === 'instructor' ? 'prof@gradelens.kr' : 'student@gradelens.kr')
     setPassword('demo1234')
@@ -96,7 +96,6 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       {/* Left decorative panel */}
       <div className="hidden lg:flex lg:w-[45%] bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 flex-col justify-between p-12 relative overflow-hidden">
-        {/* Background blobs */}
         <div className="absolute top-[-80px] right-[-80px] w-80 h-80 bg-white/5 rounded-full" />
         <div className="absolute bottom-[-60px] left-[-60px] w-64 h-64 bg-white/5 rounded-full" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl" />
@@ -123,23 +122,22 @@ export default function LoginPage() {
               학생에게는 투명한 성적 피드백을 제공합니다.
             </p>
           </div>
-
           <div className="space-y-3">
             {[
-              { icon: '✦', text: 'AI가 루브릭 기반으로 자동 채점' },
-              { icon: '✦', text: '교수님이 최종 점수를 검토 · 확정' },
-              { icon: '✦', text: '학생은 상세한 AI 피드백 리포트 확인' },
-              { icon: '✦', text: '성적 분포 시뮬레이션으로 공정한 등급 산출' },
-            ].map((item, i) => (
+              'AI가 루브릭 기반으로 자동 채점',
+              '교수님이 최종 점수를 검토 · 확정',
+              '학생은 상세한 AI 피드백 리포트 확인',
+              '성적 분포 시뮬레이션으로 공정한 등급 산출',
+            ].map((text, i) => (
               <div key={i} className="flex items-center gap-3 text-sm text-indigo-100">
-                <span className="text-indigo-300 text-xs">{item.icon}</span>
-                {item.text}
+                <span className="text-indigo-300 text-xs">✦</span>
+                {text}
               </div>
             ))}
           </div>
         </div>
 
-        {/* Demo hint */}
+        {/* Demo accounts */}
         <div className="relative">
           <div className="bg-white/10 backdrop-blur rounded-2xl p-4 border border-white/20">
             <div className="flex items-center gap-2 mb-3">
@@ -147,19 +145,13 @@ export default function LoginPage() {
               <span className="text-xs font-700 text-indigo-200 uppercase tracking-wider">데모 계정</span>
             </div>
             <div className="space-y-2">
-              <button
-                onClick={() => fillDemo('instructor')}
-                className="w-full flex items-center justify-between px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xs text-white"
-              >
-                <span>교수 계정으로 체험</span>
-                <ArrowRight size={12} />
+              <button onClick={() => fillDemo('instructor')}
+                className="w-full flex items-center justify-between px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xs text-white">
+                <span>교수 계정으로 체험</span><ArrowRight size={12} />
               </button>
-              <button
-                onClick={() => fillDemo('student')}
-                className="w-full flex items-center justify-between px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xs text-white"
-              >
-                <span>학생 계정으로 체험</span>
-                <ArrowRight size={12} />
+              <button onClick={() => fillDemo('student')}
+                className="w-full flex items-center justify-between px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xs text-white">
+                <span>학생 계정으로 체험</span><ArrowRight size={12} />
               </button>
             </div>
             <p className="text-indigo-300 text-xs mt-2 opacity-70">비밀번호: demo1234</p>
@@ -181,20 +173,16 @@ export default function LoginPage() {
         </div>
 
         <div className="w-full max-w-md">
-          {/* Card */}
           <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-100 overflow-hidden">
             {/* Tab bar */}
             <div className="flex border-b border-slate-100">
               {(['login', 'signup'] as Tab[]).map(t => (
-                <button
-                  key={t}
-                  onClick={() => switchTab(t)}
+                <button key={t} onClick={() => switchTab(t)}
                   className={`flex-1 py-4 text-sm font-700 transition-all ${
                     tab === t
                       ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50'
                       : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                >
+                  }`}>
                   {t === 'login' ? '로그인' : '회원가입'}
                 </button>
               ))}
@@ -227,47 +215,29 @@ export default function LoginPage() {
               {tab === 'signup' && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-700 text-slate-600">이름</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder={role === 'instructor' ? '홍길동' : '김민준'}
-                    required
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all"
-                  />
+                  <input type="text" value={name} onChange={e => setName(e.target.value)}
+                    placeholder={role === 'instructor' ? '홍길동' : '김민준'} required
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all" />
                 </div>
               )}
 
               {/* Email */}
               <div className="space-y-1.5">
                 <label className="text-xs font-700 text-slate-600">이메일</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="name@university.ac.kr"
-                  required
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all"
-                />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="name@university.ac.kr" required
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all" />
               </div>
 
               {/* Password */}
               <div className="space-y-1.5">
                 <label className="text-xs font-700 text-slate-600">비밀번호</label>
                 <div className="relative">
-                  <input
-                    type={showPw ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder={tab === 'signup' ? '6자 이상 입력하세요' : '비밀번호 입력'}
-                    required
-                    className="w-full px-4 py-3 pr-11 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw(p => !p)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
+                  <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                    placeholder={tab === 'signup' ? '6자 이상 입력하세요' : '비밀번호 입력'} required
+                    className="w-full px-4 py-3 pr-11 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all" />
+                  <button type="button" onClick={() => setShowPw(p => !p)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                     {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
@@ -279,33 +249,25 @@ export default function LoginPage() {
                   <label className="text-xs font-700 text-slate-600">
                     학과 <span className="text-slate-400 font-500">(선택)</span>
                   </label>
-                  <input
-                    type="text"
-                    value={department}
-                    onChange={e => setDepartment(e.target.value)}
+                  <input type="text" value={department} onChange={e => setDepartment(e.target.value)}
                     placeholder="컴퓨터공학과"
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all"
-                  />
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all" />
                 </div>
               )}
 
-              {/* Student ID (signup + student role) */}
+              {/* Student ID (signup + student) */}
               {tab === 'signup' && role === 'student' && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-700 text-slate-600">
                     학번 <span className="text-slate-400 font-500">(선택)</span>
                   </label>
-                  <input
-                    type="text"
-                    value={studentId}
-                    onChange={e => setStudentId(e.target.value)}
+                  <input type="text" value={studentId} onChange={e => setStudentId(e.target.value)}
                     placeholder="20210342"
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all"
-                  />
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-all" />
                 </div>
               )}
 
-              {/* Error */}
+              {/* Error message */}
               {error && (
                 <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-600">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
@@ -314,11 +276,8 @@ export default function LoginPage() {
               )}
 
               {/* Submit */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-sm font-700 rounded-xl shadow-lg shadow-indigo-200/60 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
+              <button type="submit" disabled={loading}
+                className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-sm font-700 rounded-xl shadow-lg shadow-indigo-200/60 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                 {loading ? (
                   <span className="flex items-center gap-2">
                     <svg className="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
@@ -328,53 +287,37 @@ export default function LoginPage() {
                     처리 중...
                   </span>
                 ) : (
-                  <>
-                    {tab === 'login' ? '로그인' : '회원가입'}
-                    <ArrowRight size={16} />
-                  </>
+                  <>{tab === 'login' ? '로그인' : '회원가입'}<ArrowRight size={16} /></>
                 )}
               </button>
 
-              {/* Switch tab hint */}
               <p className="text-center text-xs text-slate-400">
                 {tab === 'login' ? (
-                  <>
-                    계정이 없으신가요?{' '}
-                    <button type="button" onClick={() => switchTab('signup')} className="text-indigo-600 font-700 hover:underline">
-                      회원가입
-                    </button>
+                  <>계정이 없으신가요?{' '}
+                    <button type="button" onClick={() => switchTab('signup')} className="text-indigo-600 font-700 hover:underline">회원가입</button>
                   </>
                 ) : (
-                  <>
-                    이미 계정이 있으신가요?{' '}
-                    <button type="button" onClick={() => switchTab('login')} className="text-indigo-600 font-700 hover:underline">
-                      로그인
-                    </button>
+                  <>이미 계정이 있으신가요?{' '}
+                    <button type="button" onClick={() => switchTab('login')} className="text-indigo-600 font-700 hover:underline">로그인</button>
                   </>
                 )}
               </p>
             </form>
           </div>
 
-          {/* Mobile demo hint */}
+          {/* Mobile demo buttons */}
           <div className="lg:hidden mt-5 bg-white rounded-2xl border border-slate-200 p-4">
             <div className="flex items-center gap-2 mb-2">
               <Sparkles size={13} className="text-indigo-500" />
               <span className="text-xs font-700 text-slate-600">데모 계정으로 빠르게 체험</span>
             </div>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => fillDemo('instructor')}
-                className="flex-1 py-2 text-xs font-600 border border-indigo-200 text-indigo-600 rounded-xl hover:bg-indigo-50 transition-colors"
-              >
+              <button type="button" onClick={() => fillDemo('instructor')}
+                className="flex-1 py-2 text-xs font-600 border border-indigo-200 text-indigo-600 rounded-xl hover:bg-indigo-50 transition-colors">
                 교수 계정
               </button>
-              <button
-                type="button"
-                onClick={() => fillDemo('student')}
-                className="flex-1 py-2 text-xs font-600 border border-violet-200 text-violet-600 rounded-xl hover:bg-violet-50 transition-colors"
-              >
+              <button type="button" onClick={() => fillDemo('student')}
+                className="flex-1 py-2 text-xs font-600 border border-violet-200 text-violet-600 rounded-xl hover:bg-violet-50 transition-colors">
                 학생 계정
               </button>
             </div>

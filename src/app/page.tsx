@@ -218,17 +218,18 @@ export default function Dashboard() {
   const [students, setStudents] = useState<Student[]>(MOCK_STUDENTS)
 
   useEffect(() => {
-    const currentUser = getCurrentUser()
-    if (!currentUser) {
-      router.replace('/login')
-      return
-    }
-    setUser(currentUser)
-    setView(currentUser.role === 'instructor' ? 'instructor' : 'student')
+    getCurrentUser().then(currentUser => {
+      if (!currentUser) {
+        router.replace('/login')
+        return
+      }
+      setUser(currentUser)
+      setView(currentUser.role === 'instructor' ? 'instructor' : 'student')
+    })
   }, [router])
 
-  function handleLogout() {
-    logout()
+  async function handleLogout() {
+    await logout()
     router.replace('/login')
   }
 
