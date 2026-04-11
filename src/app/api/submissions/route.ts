@@ -78,22 +78,27 @@ export async function POST(req: NextRequest) {
   const submissionId = randomUUID()
   const gradeId = randomUUID()
 
-  // Upsert submission (allow resubmission)
-  db.prepare(`
-    INSERT INTO submissions (id, assignment_id, student_id, content, file_name, word_count)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(assignment_id, student_id) DO UPDATE SET
-      id = excluded.id, content = excluded.content,
-      file_name = excluded.file_name, word_count = excluded.word_count,
-      submitted_at = datetime('now')
-  `).run(submissionId, assignment_id, session.id, content.trim(), file_name ?? null, wordCount)
+  // 기존 제출 여부 확인
+  const existing = db.prepare('SELECT id FROM submissions WHERE assignment_id = ? AND student_id = ?')
+    .get(assignment_id, session.id) as { id: string } | undefined
 
-  // Fetch the real submission id after upsert
-  const saved = db.prepare('SELECT id FROM submissions WHERE assignment_id = ? AND student_id = ?')
-    .get(assignment_id, session.id) as { id: string }
+  const finalSubmissionId = existing?.id ?? submissionId
+
+  if (existing) {
+    // 재제출: 기존 ID 유지하고 내용만 업데이트
+    db.prepare(`
+      UPDATE submissions SET content = ?, file_name = ?, word_count = ?, submitted_at = datetime('now')
+      WHERE id = ?
+    `).run(content.trim(), file_name ?? null, wordCount, existing.id)
+  } else {
+    db.prepare(`
+      INSERT INTO submissions (id, assignment_id, student_id, content, file_name, word_count)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(submissionId, assignment_id, session.id, content.trim(), file_name ?? null, wordCount)
+  }
 
   // Remove old grade if resubmitting
-  db.prepare('DELETE FROM grades WHERE submission_id = ?').run(saved.id)
+  db.prepare('DELETE FROM grades WHERE submission_id = ?').run(finalSubmissionId)
 
   // AI grading
   const result = await gradeSubmission({
@@ -110,7 +115,7 @@ export async function POST(req: NextRequest) {
                         section1_summary, section2_items, feedback_short)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    gradeId, saved.id, result.total_score,
+    gradeId, finalSubmissionId, result.total_score,
     flagged ? 'flagged' : 'pending',
     JSON.stringify(result.rubric_scores),
     JSON.stringify(result.radar_scores),
@@ -120,7 +125,7 @@ export async function POST(req: NextRequest) {
   )
 
   return NextResponse.json({
-    submission_id: saved.id,
+    submission_id: finalSubmissionId,
     grade: {
       ai_score: result.total_score,
       status: flagged ? 'flagged' : 'pending',

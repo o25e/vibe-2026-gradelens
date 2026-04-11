@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk'
 
 export interface RubricItem {
   text: string
@@ -49,7 +48,6 @@ function simulateGrading(input: GradingInput): GradingResult {
   const hasIntro = /서론|도입|들어가|배경/.test(text)
   const hasConclusion = /결론|요약|정리|마무리/.test(text)
   const hasReferences = /참고\s*문헌|출처|인용|reference/i.test(text)
-  const paragraphs = text.split(/\n\n+/).filter(Boolean).length
   const avgSentenceLen = text.length / Math.max(1, text.split(/[.。!?]+/).length)
   const longWordRatio = text.split(/\s+/).filter(w => w.length >= 4).length / Math.max(1, words)
 
@@ -109,14 +107,75 @@ function simulateGrading(input: GradingInput): GradingResult {
   }
 }
 
-// ── Claude AI grading ─────────────────────────────────────────────────────────
+// ── Python AI Agent 호출 (GRADING_AGENT_URL 환경변수 설정 시) ────────────────
+async function gradeViaAgent(input: GradingInput): Promise<GradingResult | null> {
+  const agentUrl = process.env.GRADING_AGENT_URL
+  if (!agentUrl) return null
+
+  const rubricText = input.rubricItems
+    .map((r, i) => `${i + 1}. [${r.category}] ${r.text} (${r.pts}점)`)
+    .join('\n')
+  const syllabus = `[과제: ${input.assignmentTitle}]\n설명: ${input.assignmentDescription}\n\n평가항목:\n${rubricText}`
+
+  try {
+    const res = await fetch(`${agentUrl}/grade`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        syllabus_text: syllabus,
+        submission_text: input.submissionText,
+        student_name: input.studentName,
+        assignment_title: input.assignmentTitle,
+      }),
+      signal: AbortSignal.timeout(90_000),
+    })
+    if (!res.ok) return null
+
+    const data = await res.json()
+
+    // Python Agent 응답 → GradingResult 변환
+    const rubricScores: RubricScore[] = (data.item_scores ?? []).map((s: {
+      criteria_name: string; max_points: number; awarded_points: number;
+      reasoning: string; evidence: string; review_required: boolean; review_note?: string
+    }) => ({
+      rubric_text: s.criteria_name,
+      max_pts: s.max_points,
+      score: s.awarded_points,
+      reason: `${s.reasoning}\n근거: "${s.evidence}"${s.review_required ? `\n⚠ 검토 필요: ${s.review_note ?? ''}` : ''}`,
+    }))
+
+    const section2: Section2Item[] = (data.improvements ?? []).map((imp: string) => ({
+      action: imp,
+      impact: '점수 향상 예상',
+      category: 'logic' as const,
+    }))
+
+    return {
+      total_score: data.total_score,
+      rubric_scores: rubricScores,
+      section1_summary: data.summary ?? data.chain_of_thought ?? '',
+      section2_items: section2,
+      radar_scores: data.radar_scores ?? { 논리력: 70, 자료활용도: 70, 가독성: 70, 창의성: 70, 형식준수: 70 },
+      feedback_short: data.feedback_short ?? '',
+    }
+  } catch {
+    return null
+  }
+}
+
+// ── Gemini AI grading ─────────────────────────────────────────────────────────
 export async function gradeSubmission(input: GradingInput): Promise<GradingResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  // 1순위: Python AI Agent (GRADING_AGENT_URL 설정 시)
+  const agentResult = await gradeViaAgent(input)
+  if (agentResult) return agentResult
+
+  // 2순위: Groq 직접 호출 (GROQ_API_KEY 설정 시)
+  const apiKey = process.env.GROQ_API_KEY
+  console.log('[grading] GROQ_API_KEY 상태:', apiKey ? `설정됨 (${apiKey.slice(0, 8)}...)` : '없음 — 시뮬레이션 사용')
   if (!apiKey) {
     return simulateGrading(input)
   }
 
-  const client = new Anthropic({ apiKey })
   const totalPts = input.rubricItems.reduce((a, r) => a + r.pts, 0)
   const rubricList = input.rubricItems
     .map((r, i) => `  ${i + 1}. [${r.category}] ${r.text} — ${r.pts}점 만점`)
@@ -136,7 +195,7 @@ ${rubricList}
 ${input.submissionText.slice(0, 6000)}
 ${input.submissionText.length > 6000 ? '\n[... 이하 생략됨]' : ''}
 
-## 응답 형식 (JSON만 출력, 다른 텍스트 금지)
+## 응답 형식 (JSON만 출력, 마크다운 코드블록 없이)
 {
   "total_score": <0~${totalPts} 사이 정수>,
   "rubric_scores": [
@@ -166,26 +225,37 @@ ${input.submissionText.length > 6000 ? '\n[... 이하 생략됨]' : ''}
 }`
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }],
+    console.log('[grading] Groq 호출 시작 — 과제:', input.assignmentTitle)
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }],
+      }),
     })
 
-    const raw = (message.content[0] as { type: string; text: string }).text.trim()
-    // Extract JSON even if wrapped in markdown code block
+    if (!res.ok) throw new Error(`Groq HTTP ${res.status}: ${await res.text()}`)
+
+    const data = await res.json()
+    const raw = data.choices[0].message.content.trim()
+    console.log('[grading] Groq 응답 (앞 200자):', raw.slice(0, 200))
+
     const jsonMatch = raw.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error('No JSON found in response')
 
-    const result: GradingResult = JSON.parse(jsonMatch[0])
+    const gradeResult: GradingResult = JSON.parse(jsonMatch[0])
+    const computedTotal = gradeResult.rubric_scores.reduce((a, r) => a + r.score, 0)
+    gradeResult.total_score = computedTotal
+    console.log('[grading] Groq 채점 완료 — 총점:', gradeResult.total_score)
 
-    // Validate total_score matches sum of rubric_scores
-    const computedTotal = result.rubric_scores.reduce((a, r) => a + r.score, 0)
-    result.total_score = computedTotal
-
-    return result
+    return gradeResult
   } catch (err) {
-    console.error('[grading] AI call failed, using simulation:', err)
+    console.error('[grading] Groq 호출 실패, 시뮬레이션으로 전환:', err)
     return simulateGrading(input)
   }
 }
