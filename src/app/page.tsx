@@ -5,6 +5,7 @@ import {
   ClipboardList, BarChart3, Users, Settings, BookOpen,
   Trophy, GraduationCap, ChevronRight, ChevronLeft, Bell, Search,
   FileText, LogOut, CheckCircle2, Calendar, Plus, Clock, Trash2,
+  RefreshCw,
 } from 'lucide-react'
 import { MOCK_STUDENTS, MOCK_ASSIGNMENT, INITIAL_RUBRICS } from '@/lib/mockData'
 import { getCurrentUser, logout } from '@/lib/auth'
@@ -15,12 +16,14 @@ import GradeOptimizer from '@/components/instructor/GradeOptimizer'
 import GradeReport from '@/components/student/GradeReport'
 import AssignmentSubmit from '@/components/student/AssignmentSubmit'
 import ChatBot from '@/components/student/ChatBot'
-import { Avatar } from '@/components/ui'
+import { Avatar, Badge, Button, Card } from '@/components/ui'
 import type { Student } from '@/lib/mockData'
 
 type ViewMode = 'instructor' | 'student'
 type InstructorSection = 'grading' | 'stats' | 'students' | 'settings'
-type StudentSection = 'report' | 'assignments' | 'ranking'
+type StudentSection = 'assignments' | 'ranking'
+// 학생 서브뷰: 목록 / 제출 폼 / 성적 리포트
+type StudentView = 'list' | 'submit' | 'report'
 type InstructorGradingView = 'list' | 'detail' | 'create'
 
 interface AssignmentItem {
@@ -42,6 +45,15 @@ interface Notification {
   created_at: string
 }
 
+// 학생 제출 요약 (목록용)
+interface SubmissionSummary {
+  id: string
+  assignment_id: string
+  grade_status: string
+  ai_score: number | null
+  confirmed_score: number | null
+}
+
 const INSTRUCTOR_NAV: { id: InstructorSection; label: string; icon: React.ReactNode; sub?: string }[] = [
   { id: 'grading', label: 'AI 채점 관리', icon: <ClipboardList size={16} />, sub: '과제 · 루브릭 · 검토' },
   { id: 'stats', label: '성적 통계', icon: <BarChart3 size={16} /> },
@@ -49,13 +61,12 @@ const INSTRUCTOR_NAV: { id: InstructorSection; label: string; icon: React.ReactN
   { id: 'settings', label: '시스템 설정', icon: <Settings size={16} /> },
 ]
 const STUDENT_NAV: { id: StudentSection; label: string; icon: React.ReactNode }[] = [
-  { id: 'report', label: '나의 성적 리포트', icon: <FileText size={16} /> },
   { id: 'assignments', label: '과제 목록', icon: <BookOpen size={16} /> },
   { id: 'ranking', label: '학급 순위', icon: <Trophy size={16} /> },
 ]
 
 // ── Notification Bell ────────────────────────────────────────────────────────
-function NotificationBell() {
+function NotificationBell({ onNavigate }: { onNavigate?: (assignmentId: string) => void }) {
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unread, setUnread] = useState(0)
@@ -85,6 +96,13 @@ function NotificationBell() {
   const handleOpen = () => {
     setOpen(o => !o)
     if (!open && unread > 0) markAllRead()
+  }
+
+  const handleNotifClick = (n: Notification) => {
+    if (n.assignment_id && onNavigate) {
+      onNavigate(n.assignment_id)
+      setOpen(false)
+    }
   }
 
   return (
@@ -118,14 +136,24 @@ function NotificationBell() {
             ) : notifications.map(n => (
               <div
                 key={n.id}
-                className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors ${n.is_read ? 'opacity-60' : ''}`}
+                onClick={() => handleNotifClick(n)}
+                className={`px-4 py-3 border-b border-slate-50 transition-colors ${
+                  n.assignment_id && onNavigate
+                    ? 'cursor-pointer hover:bg-indigo-50'
+                    : 'hover:bg-slate-50'
+                } ${n.is_read ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-start gap-2">
                   <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${n.is_read ? 'bg-slate-300' : 'bg-indigo-500'}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-700 text-slate-800">{n.title}</p>
                     <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
-                    <p className="text-xs text-slate-300 mt-1">{new Date(n.created_at).toLocaleString('ko-KR')}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xs text-slate-300">{new Date(n.created_at).toLocaleString('ko-KR')}</p>
+                      {n.assignment_id && onNavigate && (
+                        <span className="text-xs text-indigo-500 font-600">성적 확인 →</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -229,6 +257,139 @@ function InstructorAssignmentList({
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Student Assignment List (제출 현황 포함) ────────────────────────────────
+function StudentAssignmentList({
+  onSelect,
+}: {
+  onSelect: (assignmentId: string, hasSubmission: boolean) => void
+}) {
+  const [assignments, setAssignments] = useState<AssignmentItem[]>([])
+  const [submissions, setSubmissions] = useState<SubmissionSummary[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [aRes, sRes] = await Promise.all([
+        fetch('/api/assignments', { cache: 'no-store' }),
+        fetch('/api/submissions', { cache: 'no-store' }),
+      ])
+      const aData = await aRes.json()
+      const sData = await sRes.json()
+      setAssignments(aData.assignments ?? [])
+      setSubmissions(sData.submissions ?? [])
+    } catch {
+      // silent
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48 text-slate-400">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm">과제 불러오는 중...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (assignments.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
+        <BookOpen size={36} className="opacity-30" />
+        <p className="text-sm">현재 등록된 과제가 없습니다.</p>
+        <p className="text-xs">교수님이 과제를 게시하면 여기에 표시됩니다.</p>
+      </div>
+    )
+  }
+
+  // assignment_id → 제출 정보 맵
+  const subMap = new Map(submissions.map(s => [s.assignment_id, s]))
+
+  return (
+    <div className="space-y-4 max-w-3xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-700 text-slate-800">과제 목록</h2>
+          <p className="text-xs text-slate-400">과제를 클릭하면 제출 또는 성적 리포트로 이동합니다</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={fetchData}>
+          <RefreshCw size={13} /> 새로고침
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {assignments.map((a, idx) => {
+          const sub = subMap.get(a.id)
+          const deadline = new Date(a.deadline)
+          const now = new Date()
+          const isPast = now > deadline
+          const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
+
+          // 상태 배지 결정
+          let statusBadge: React.ReactNode
+          let actionLabel: string
+          if (!sub) {
+            statusBadge = <Badge variant={isPast ? 'danger' : 'warning'}>미제출</Badge>
+            actionLabel = isPast ? '마감됨' : '제출하기 →'
+          } else if (sub.grade_status === 'waiting' || (sub.ai_score === null && sub.confirmed_score === null)) {
+            statusBadge = <Badge variant="warning">채점 대기 중</Badge>
+            actionLabel = '대기 중 →'
+          } else {
+            statusBadge = <Badge variant="success">성적 공개됨</Badge>
+            actionLabel = '성적 확인 →'
+          }
+
+          const clickable = !isPast || !!sub
+          const hasSubmission = !!sub
+
+          return (
+            <Card key={a.id}>
+              <div
+                className={`flex items-center justify-between ${clickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'opacity-60'}`}
+                onClick={() => clickable && onSelect(a.id, hasSubmission)}
+              >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-800 text-indigo-600">{idx + 1}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-700 text-slate-800 truncate">{a.title}</span>
+                      {statusBadge}
+                      <Badge variant={isPast ? 'danger' : hoursLeft < 24 ? 'warning' : 'info'}>
+                        <Clock size={9} />
+                        {isPast ? '마감됨' : hoursLeft < 24 ? `${hoursLeft}시간 남음` : `D-${Math.ceil(hoursLeft / 24)}`}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5">{a.course}</div>
+                  </div>
+                </div>
+                {clickable && (
+                  <span className={`text-xs font-600 ml-3 flex-shrink-0 ${
+                    hasSubmission && sub && sub.grade_status !== 'waiting' && sub.ai_score !== null
+                      ? 'text-emerald-600'
+                      : hasSubmission
+                      ? 'text-amber-600'
+                      : 'text-indigo-600'
+                  }`}>
+                    {actionLabel}
+                  </span>
+                )}
+              </div>
+            </Card>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -469,21 +630,38 @@ function Sidebar({
 }
 
 // ── Topbar ───────────────────────────────────────────────────────────────────
-function Topbar({ section, user }: { section: string; user: AuthUser }) {
+function Topbar({
+  section, studentView, user, onNotificationNavigate,
+}: {
+  section: string; studentView?: StudentView; user: AuthUser
+  onNotificationNavigate?: (assignmentId: string) => void
+}) {
   const titles: Record<string, string> = {
     grading: 'AI 채점 관리', stats: '성적 통계', students: '수강생 관리',
-    settings: '시스템 설정', report: '나의 성적 리포트', assignments: '과제 목록', ranking: '학급 순위',
+    settings: '시스템 설정', assignments: '과제 목록', ranking: '학급 순위',
+  }
+  const subByView: Record<StudentView, string> = {
+    list: '과제를 클릭하면 제출하거나 성적 리포트를 확인할 수 있습니다',
+    submit: '과제 내용을 입력하고 AI 자동 채점을 받아보세요',
+    report: '교수님이 공지한 성적 리포트입니다',
   }
   const subs: Record<string, string> = {
     grading: `${MOCK_ASSIGNMENT.course} · 루브릭 설정 → 학생 제출 → AI 채점 → 교수 확정 후 공지`,
-    report: `교수 공지 후 성적 리포트가 표시됩니다`,
-    assignments: `과제 제출 후 교수님 검토를 거쳐 성적이 공개됩니다`,
+    assignments: studentView ? subByView[studentView] : subByView.list,
   }
+
+  const titleOverride = section === 'assignments' && studentView === 'report'
+    ? '성적 리포트'
+    : section === 'assignments' && studentView === 'submit'
+    ? '과제 제출'
+    : undefined
 
   return (
     <header className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between">
       <div>
-        <h1 className="text-base font-800 text-slate-800 tracking-tight">{titles[section] ?? section}</h1>
+        <h1 className="text-base font-800 text-slate-800 tracking-tight">
+          {titleOverride ?? titles[section] ?? section}
+        </h1>
         <p className="text-xs text-slate-400 mt-0.5">{subs[section] ?? ''}</p>
       </div>
       <div className="flex items-center gap-2">
@@ -494,7 +672,7 @@ function Topbar({ section, user }: { section: string; user: AuthUser }) {
             className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:bg-white w-40"
           />
         </div>
-        <NotificationBell />
+        <NotificationBell onNavigate={onNotificationNavigate} />
         <Avatar name={user.name.charAt(0)} />
       </div>
     </header>
@@ -507,8 +685,12 @@ export default function Dashboard() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [view, setView] = useState<ViewMode>('student')
   const [instructorSection, setInstructorSection] = useState<InstructorSection>('grading')
-  const [studentSection, setStudentSection] = useState<StudentSection>('report')
+  const [studentSection, setStudentSection] = useState<StudentSection>('assignments')
   const [students] = useState<Student[]>(MOCK_STUDENTS)
+
+  // 학생 서브뷰 상태
+  const [studentView, setStudentView] = useState<StudentView>('list')
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null)
 
   const [currentAssignmentId, setCurrentAssignmentId] = useState<string | undefined>(undefined)
   const [courseName, setCourseName] = useState(MOCK_ASSIGNMENT.course)
@@ -539,9 +721,10 @@ export default function Dashboard() {
 
   useEffect(() => { refreshAssignments() }, [refreshAssignments])
 
+  // 로그아웃: 하드 리다이렉트로 모든 상태 완전 초기화
   const handleLogout = async () => {
     await logout()
-    router.replace('/login')
+    window.location.href = '/login'
   }
 
   const handleAssignmentPublished = (id: string) => {
@@ -553,6 +736,34 @@ export default function Dashboard() {
   const handleSetInstructorSection = (s: InstructorSection) => {
     setInstructorSection(s)
     if (s === 'grading') setInstructorGradingView('list')
+  }
+
+  // 학생 — 과제 목록에서 항목 클릭
+  const handleStudentAssignmentSelect = (assignmentId: string, hasSubmission: boolean) => {
+    setSelectedAssignmentId(assignmentId)
+    setStudentView(hasSubmission ? 'report' : 'submit')
+  }
+
+  // 학생 — 목록으로 돌아가기
+  const handleStudentBackToList = () => {
+    setStudentView('list')
+    setSelectedAssignmentId(null)
+  }
+
+  // 학생 — 알림 클릭 시 해당 과제 리포트로 이동
+  const handleNotificationNavigate = (assignmentId: string) => {
+    setStudentSection('assignments')
+    setSelectedAssignmentId(assignmentId)
+    setStudentView('report')
+  }
+
+  // 학생 — 사이드바 섹션 전환 시 서브뷰 초기화
+  const handleSetStudentSection = (s: StudentSection) => {
+    setStudentSection(s)
+    if (s === 'assignments') {
+      setStudentView('list')
+      setSelectedAssignmentId(null)
+    }
   }
 
   if (!user) {
@@ -575,14 +786,19 @@ export default function Dashboard() {
       <Sidebar
         view={view}
         instructorSection={instructorSection} setInstructorSection={handleSetInstructorSection}
-        studentSection={studentSection} setStudentSection={setStudentSection}
+        studentSection={studentSection} setStudentSection={handleSetStudentSection}
         students={students}
         user={user}
         onLogout={handleLogout}
         courseName={courseName}
       />
       <div className="flex-1 flex flex-col min-w-0">
-        <Topbar section={currentSection} user={user} />
+        <Topbar
+          section={currentSection}
+          studentView={view === 'student' ? studentView : undefined}
+          user={user}
+          onNotificationNavigate={view === 'student' ? handleNotificationNavigate : undefined}
+        />
         <DashboardInfoBar view={view} students={students} user={user} courseName={courseName} />
         <main className="flex-1 p-6 overflow-y-auto">
 
@@ -630,15 +846,32 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* ── 학생 ── */}
-          {view === 'student' && studentSection === 'report' && (
+          {/* ── 학생 — 과제 목록 (list) ── */}
+          {view === 'student' && studentSection === 'assignments' && studentView === 'list' && (
+            <StudentAssignmentList onSelect={handleStudentAssignmentSelect} />
+          )}
+
+          {/* ── 학생 — 과제 제출 (submit) ── */}
+          {view === 'student' && studentSection === 'assignments' && studentView === 'submit' && (
+            <AssignmentSubmit
+              user={user}
+              initialAssignmentId={selectedAssignmentId ?? undefined}
+              onBack={handleStudentBackToList}
+            />
+          )}
+
+          {/* ── 학생 — 성적 리포트 (report) ── */}
+          {view === 'student' && studentSection === 'assignments' && studentView === 'report' && (
             <div className="max-w-5xl mx-auto">
-              <GradeReport user={user} />
+              <GradeReport
+                user={user}
+                assignmentId={selectedAssignmentId ?? undefined}
+                onBack={handleStudentBackToList}
+              />
             </div>
           )}
-          {view === 'student' && studentSection === 'assignments' && (
-            <AssignmentSubmit user={user} />
-          )}
+
+          {/* ── 학생 — 학급 순위 ── */}
           {view === 'student' && studentSection === 'ranking' && (
             <div className="flex items-center justify-center h-64 text-slate-400">
               <div className="text-center">

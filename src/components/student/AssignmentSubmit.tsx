@@ -18,7 +18,15 @@ const GRADING_MESSAGES = [
   '피드백 리포트 생성 중...',
 ]
 
-export default function AssignmentSubmit({ user }: { user: AuthUser }) {
+export default function AssignmentSubmit({
+  user,
+  initialAssignmentId,
+  onBack,
+}: {
+  user: AuthUser
+  initialAssignmentId?: string
+  onBack?: () => void
+}) {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null)
   const [loading, setLoading] = useState(true)
@@ -29,7 +37,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
   const [submitting, setSubmitting] = useState(false)
   const [gradingMsg, setGradingMsg] = useState(0)
-  const [submitted, setSubmitted] = useState(false)   // 제출 완료 → 대기 상태
+  const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAssignments = useCallback(async () => {
@@ -37,13 +45,20 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     try {
       const res = await fetch('/api/assignments', { cache: 'no-store' })
       const data = await res.json()
-      setAssignments(data.assignments ?? [])
+      const list: Assignment[] = data.assignments ?? []
+      setAssignments(list)
+
+      // initialAssignmentId가 주어진 경우 자동으로 선택
+      if (initialAssignmentId) {
+        const found = list.find(a => a.id === initialAssignmentId)
+        if (found) setSelectedAssignment(found)
+      }
     } catch {
       setError('과제를 불러오는 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [initialAssignmentId])
 
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
 
@@ -64,12 +79,17 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     setError(null)
   }
 
+  // 목록으로 돌아가기: onBack이 있으면 부모에게 위임, 없으면 내부 목록으로
   const handleBackToList = () => {
-    setSelectedAssignment(null)
-    setSubmitted(false)
-    setContent('')
-    setFile(null)
-    setError(null)
+    if (onBack) {
+      onBack()
+    } else {
+      setSelectedAssignment(null)
+      setSubmitted(false)
+      setContent('')
+      setFile(null)
+      setError(null)
+    }
   }
 
   const handleSubmit = async () => {
@@ -94,7 +114,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '제출에 실패했습니다.')
-      // 성적은 교수 공지 후 공개 → 대기 화면으로 전환
       setSubmitted(true)
     } catch (e) {
       setError((e as Error).message)
@@ -115,8 +134,8 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     )
   }
 
-  // ── 과제 목록 ──────────────────────────────────────────────────────────────
-  if (!selectedAssignment) {
+  // ── 과제 목록 (initialAssignmentId 없을 때만 표시) ─────────────────────────
+  if (!selectedAssignment && !initialAssignmentId) {
     return (
       <div className="space-y-4 max-w-3xl mx-auto">
         <div className="flex items-center justify-between">
@@ -181,6 +200,18 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
             })}
           </div>
         )}
+      </div>
+    )
+  }
+
+  // initialAssignmentId는 있는데 아직 fetch 완료 전(선택 안 된 경우) — 로딩 완료 후 자동 선택됨
+  if (!selectedAssignment) {
+    return (
+      <div className="flex items-center justify-center h-48 text-slate-400">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm">과제 정보 불러오는 중...</p>
+        </div>
       </div>
     )
   }
