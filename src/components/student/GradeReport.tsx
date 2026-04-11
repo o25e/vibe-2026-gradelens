@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
-import { TrendingUp, BookOpen, CheckCircle2, ArrowRight, Target, RefreshCw, FileText } from 'lucide-react'
+import { TrendingUp, BookOpen, CheckCircle2, ArrowRight, Target, RefreshCw, FileText, Clock } from 'lucide-react'
 import { Card, CardHeader, Badge, ProgressBar, Avatar, Button } from '@/components/ui'
 import { ASSIGNMENT_HISTORY } from '@/lib/mockData'
 import type { AuthUser } from '@/lib/auth'
@@ -50,7 +50,7 @@ export default function GradeReport({ user }: { user: AuthUser }) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/submissions')
+      const res = await fetch('/api/submissions', { cache: 'no-store' })
       const data = await res.json()
       if (data.submissions?.length > 0) {
         setSubmission(data.submissions[0])
@@ -82,6 +82,23 @@ export default function GradeReport({ user }: { user: AuthUser }) {
       <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
         <p className="text-sm text-red-500">{error}</p>
         <Button variant="ghost" size="sm" onClick={fetchLatest}><RefreshCw size={13} /> 다시 시도</Button>
+      </div>
+    )
+  }
+
+  // 제출했지만 교수가 아직 공지하지 않은 경우
+  if (submission && submission.grade_status === 'waiting') {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4 text-slate-400">
+        <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center">
+          <Clock size={28} className="text-amber-400 animate-pulse" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-600 text-slate-700">과제 제출 완료 — 교수님 채점 대기 중</p>
+          <p className="text-xs mt-1 text-slate-400">채점이 완료되면 알림을 통해 안내드립니다.</p>
+          <p className="text-xs mt-1 text-slate-300">제출 과제: {submission.assignment_title}</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={fetchLatest}><RefreshCw size={13} /> 새로고침</Button>
       </div>
     )
   }

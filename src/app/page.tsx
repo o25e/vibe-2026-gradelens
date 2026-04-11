@@ -1,10 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ClipboardList, BarChart3, Users, Settings, BookOpen,
   Trophy, GraduationCap, ChevronRight, ChevronLeft, Bell, Search,
-  FileText, LogOut, CheckCircle2, Calendar, Plus, Clock
+  FileText, LogOut, CheckCircle2, Calendar, Plus, Clock, Trash2,
 } from 'lucide-react'
 import { MOCK_STUDENTS, MOCK_ASSIGNMENT, INITIAL_RUBRICS } from '@/lib/mockData'
 import { getCurrentUser, logout } from '@/lib/auth'
@@ -32,6 +32,16 @@ interface AssignmentItem {
   is_active: number
 }
 
+interface Notification {
+  id: string
+  type: string
+  title: string
+  body: string
+  assignment_id: string | null
+  is_read: number
+  created_at: string
+}
+
 const INSTRUCTOR_NAV: { id: InstructorSection; label: string; icon: React.ReactNode; sub?: string }[] = [
   { id: 'grading', label: 'AI 채점 관리', icon: <ClipboardList size={16} />, sub: '과제 · 루브릭 · 검토' },
   { id: 'stats', label: '성적 통계', icon: <BarChart3 size={16} /> },
@@ -44,15 +54,100 @@ const STUDENT_NAV: { id: StudentSection; label: string; icon: React.ReactNode }[
   { id: 'ranking', label: '학급 순위', icon: <Trophy size={16} /> },
 ]
 
+// ── Notification Bell ────────────────────────────────────────────────────────
+function NotificationBell() {
+  const [open, setOpen] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unread, setUnread] = useState(0)
+
+  const fetchNotifs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      setNotifications(data.notifications ?? [])
+      setUnread(data.unreadCount ?? 0)
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    fetchNotifs()
+    const id = setInterval(fetchNotifs, 15000)
+    return () => clearInterval(id)
+  }, [fetchNotifs])
+
+  const markAllRead = async () => {
+    await fetch('/api/notifications', { method: 'PATCH' })
+    setUnread(0)
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })))
+  }
+
+  const handleOpen = () => {
+    setOpen(o => !o)
+    if (!open && unread > 0) markAllRead()
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleOpen}
+        className="relative w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors"
+      >
+        <Bell size={16} className="text-slate-500" />
+        {unread > 0 && (
+          <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full text-white text-[9px] font-800 flex items-center justify-center">
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-10 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <span className="text-sm font-700 text-slate-800">알림</span>
+            {notifications.length > 0 && (
+              <button onClick={markAllRead} className="text-xs text-indigo-500 hover:underline">모두 읽음</button>
+            )}
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {notifications.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-24 text-slate-400 gap-1">
+                <Bell size={18} className="opacity-30" />
+                <p className="text-xs">알림이 없습니다</p>
+              </div>
+            ) : notifications.map(n => (
+              <div
+                key={n.id}
+                className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors ${n.is_read ? 'opacity-60' : ''}`}
+              >
+                <div className="flex items-start gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${n.is_read ? 'bg-slate-300' : 'bg-indigo-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-700 text-slate-800">{n.title}</p>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
+                    <p className="text-xs text-slate-300 mt-1">{new Date(n.created_at).toLocaleString('ko-KR')}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Instructor Assignment List ────────────────────────────────────────────────
 function InstructorAssignmentList({
   assignments,
   onSelect,
   onCreateNew,
+  onDeleted,
 }: {
   assignments: AssignmentItem[]
   onSelect: (id: string) => void
   onCreateNew: () => void
+  onDeleted: () => void
 }) {
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
@@ -73,10 +168,7 @@ function InstructorAssignmentList({
         <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-3">
           <ClipboardList size={36} className="opacity-30" />
           <p className="text-sm">등록된 과제가 없습니다.</p>
-          <button
-            onClick={onCreateNew}
-            className="text-sm text-indigo-600 hover:underline"
-          >
+          <button onClick={onCreateNew} className="text-sm text-indigo-600 hover:underline">
             첫 번째 과제 만들기 →
           </button>
         </div>
@@ -100,9 +192,7 @@ function InstructorAssignmentList({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-700 text-slate-800 truncate">{a.title}</span>
-                      <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${
-                        isPast ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
-                      }`}>
+                      <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${isPast ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
                         {isPast ? '마감됨' : '진행 중'}
                       </span>
                     </div>
@@ -118,7 +208,19 @@ function InstructorAssignmentList({
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 ml-4">
+                <div className="flex items-center gap-2 ml-4" onClick={e => e.stopPropagation()}>
+                  <button
+                    onClick={() => {
+                      if (confirm(`"${a.title}" 과제를 삭제할까요?\n모든 제출물과 성적도 함께 삭제됩니다.`)) {
+                        fetch(`/api/assignments/${a.id}`, { method: 'DELETE' })
+                          .then(r => r.ok && onDeleted())
+                      }
+                    }}
+                    className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    title="과제 삭제"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                   <span className="text-xs text-indigo-600 font-600">채점 관리 →</span>
                   <ChevronRight size={14} className="text-slate-300" />
                 </div>
@@ -373,9 +475,9 @@ function Topbar({ section, user }: { section: string; user: AuthUser }) {
     settings: '시스템 설정', report: '나의 성적 리포트', assignments: '과제 목록', ranking: '학급 순위',
   }
   const subs: Record<string, string> = {
-    grading: `${MOCK_ASSIGNMENT.course} · 루브릭 설정 → 학생 제출 → AI 채점 → 교수 확정`,
-    report: `최신 AI 피드백 리포트`,
-    assignments: `과제 제출 · AI 즉시 채점`,
+    grading: `${MOCK_ASSIGNMENT.course} · 루브릭 설정 → 학생 제출 → AI 채점 → 교수 확정 후 공지`,
+    report: `교수 공지 후 성적 리포트가 표시됩니다`,
+    assignments: `과제 제출 후 교수님 검토를 거쳐 성적이 공개됩니다`,
   }
 
   return (
@@ -392,10 +494,7 @@ function Topbar({ section, user }: { section: string; user: AuthUser }) {
             className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:bg-white w-40"
           />
         </div>
-        <button className="relative w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
-          <Bell size={16} className="text-slate-500" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-        </button>
+        <NotificationBell />
         <Avatar name={user.name.charAt(0)} />
       </div>
     </header>
@@ -411,7 +510,6 @@ export default function Dashboard() {
   const [studentSection, setStudentSection] = useState<StudentSection>('report')
   const [students] = useState<Student[]>(MOCK_STUDENTS)
 
-  // Track active assignment ID (set when instructor selects or publishes)
   const [currentAssignmentId, setCurrentAssignmentId] = useState<string | undefined>(undefined)
   const [courseName, setCourseName] = useState(MOCK_ASSIGNMENT.course)
   const [allAssignments, setAllAssignments] = useState<AssignmentItem[]>([])
@@ -425,19 +523,21 @@ export default function Dashboard() {
     })
   }, [router])
 
-  const refreshAssignments = () => {
-    fetch('/api/assignments')
+  const refreshAssignments = useCallback(() => {
+    fetch('/api/assignments', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
-        if (data.assignments?.length > 0) {
+        if (data.assignments) {
           setAllAssignments(data.assignments)
-          setCourseName(data.assignments[0].course ?? MOCK_ASSIGNMENT.course)
+          if (data.assignments.length > 0) {
+            setCourseName(data.assignments[0].course ?? MOCK_ASSIGNMENT.course)
+          }
         }
       })
       .catch(() => {})
-  }
+  }, [])
 
-  useEffect(() => { refreshAssignments() }, [])
+  useEffect(() => { refreshAssignments() }, [refreshAssignments])
 
   const handleLogout = async () => {
     await logout()
@@ -486,7 +586,7 @@ export default function Dashboard() {
         <DashboardInfoBar view={view} students={students} user={user} courseName={courseName} />
         <main className="flex-1 p-6 overflow-y-auto">
 
-          {/* ── Instructor ── */}
+          {/* ── 교수 ── */}
           {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'list' && (
             <InstructorAssignmentList
               assignments={allAssignments}
@@ -495,6 +595,7 @@ export default function Dashboard() {
                 setInstructorGradingView('detail')
               }}
               onCreateNew={() => setInstructorGradingView('create')}
+              onDeleted={refreshAssignments}
             />
           )}
           {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'create' && (
@@ -529,7 +630,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* ── Student ── */}
+          {/* ── 학생 ── */}
           {view === 'student' && studentSection === 'report' && (
             <div className="max-w-5xl mx-auto">
               <GradeReport user={user} />

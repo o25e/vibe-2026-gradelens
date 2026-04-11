@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { Upload, FileCheck, X, Sparkles, Clock, CheckCircle2, AlertCircle, File, RefreshCw, ChevronLeft, BookOpen } from 'lucide-react'
-import { Card, CardHeader, Badge, Button, ProgressBar } from '@/components/ui'
+import { Card, CardHeader, Badge, Button } from '@/components/ui'
 import type { AuthUser } from '@/lib/auth'
 
 interface RubricItem { id: string; text: string; pts: number; category: string }
@@ -9,14 +9,6 @@ interface Assignment {
   id: string; title: string; description: string; course: string; deadline: string
   rubric_items: RubricItem[]
   created_at: string
-}
-interface GradeResult {
-  ai_score: number
-  status: string
-  rubric_scores: { rubric_text: string; max_pts: number; score: number; reason: string }[]
-  section1_summary: string
-  section2_items: { action: string; impact: string; category: string }[]
-  feedback_short: string
 }
 
 const GRADING_MESSAGES = [
@@ -37,13 +29,13 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
   const [submitting, setSubmitting] = useState(false)
   const [gradingMsg, setGradingMsg] = useState(0)
-  const [result, setResult] = useState<GradeResult | null>(null)
+  const [submitted, setSubmitted] = useState(false)   // 제출 완료 → 대기 상태
   const [error, setError] = useState<string | null>(null)
 
   const fetchAssignments = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/assignments')
+      const res = await fetch('/api/assignments', { cache: 'no-store' })
       const data = await res.json()
       setAssignments(data.assignments ?? [])
     } catch {
@@ -66,7 +58,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
   const handleSelectAssignment = (a: Assignment) => {
     setSelectedAssignment(a)
-    setResult(null)
+    setSubmitted(false)
     setContent('')
     setFile(null)
     setError(null)
@@ -74,7 +66,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
   const handleBackToList = () => {
     setSelectedAssignment(null)
-    setResult(null)
+    setSubmitted(false)
     setContent('')
     setFile(null)
     setError(null)
@@ -82,14 +74,10 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
   const handleSubmit = async () => {
     if (!selectedAssignment) return
-    if (!content.trim()) {
-      setError('제출 내용을 입력하세요.')
-      return
-    }
+    if (!content.trim()) { setError('제출 내용을 입력하세요.'); return }
 
     setSubmitting(true)
     setError(null)
-
     const msgInterval = setInterval(() => {
       setGradingMsg(m => (m + 1) % GRADING_MESSAGES.length)
     }, 900)
@@ -106,21 +94,14 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '제출에 실패했습니다.')
-      setResult(data.grade)
+      // 성적은 교수 공지 후 공개 → 대기 화면으로 전환
+      setSubmitted(true)
     } catch (e) {
       setError((e as Error).message)
     } finally {
       clearInterval(msgInterval)
       setSubmitting(false)
     }
-  }
-
-  const reset = () => {
-    setResult(null)
-    setContent('')
-    setFile(null)
-    setError(null)
-    setGradingMsg(0)
   }
 
   if (loading) {
@@ -134,7 +115,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     )
   }
 
-  // ── Assignment List View ───────────────────────────────────────────────────
+  // ── 과제 목록 ──────────────────────────────────────────────────────────────
   if (!selectedAssignment) {
     return (
       <div className="space-y-4 max-w-3xl mx-auto">
@@ -162,7 +143,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
               const isPast = now > deadline
               const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
               const totalPts = a.rubric_items.reduce((s, r) => s + r.pts, 0)
-
               return (
                 <Card key={a.id}>
                   <div
@@ -191,7 +171,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
                       variant={isPast ? 'ghost' : 'outline'}
                       className="ml-3 flex-shrink-0"
                       disabled={isPast}
-                      onClick={() => handleSelectAssignment(a)}
+                      onClick={e => { e.stopPropagation(); handleSelectAssignment(a) }}
                     >
                       {isPast ? '마감됨' : '제출하기 →'}
                     </Button>
@@ -205,7 +185,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
     )
   }
 
-  // ── Submission Form View ───────────────────────────────────────────────────
+  // ── 제출 폼 ────────────────────────────────────────────────────────────────
   const deadline = new Date(selectedAssignment.deadline)
   const now = new Date()
   const isPast = now > deadline
@@ -214,7 +194,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
-      {/* Back Button */}
       <button
         onClick={handleBackToList}
         className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
@@ -222,7 +201,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
         <ChevronLeft size={15} /> 과제 목록으로
       </button>
 
-      {/* Assignment Info */}
+      {/* 과제 정보 */}
       <Card>
         <CardHeader
           title={selectedAssignment.title}
@@ -237,7 +216,6 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
         <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 text-sm text-slate-600 leading-relaxed mb-4">
           {selectedAssignment.description}
         </div>
-
         <div>
           <div className="text-xs font-700 text-slate-500 mb-2">
             <Sparkles size={11} className="inline mr-1 text-indigo-500" />
@@ -254,77 +232,33 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
         </div>
       </Card>
 
-      {/* Result Panel */}
-      {result && (
-        <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50">
+      {/* 제출 완료 → 대기 중 */}
+      {submitted && (
+        <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 bg-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
+            <div className="w-11 h-11 bg-amber-500 rounded-xl flex items-center justify-center flex-shrink-0">
               <CheckCircle2 size={22} className="text-white" />
             </div>
             <div className="flex-1">
-              <div className="text-sm font-700 text-emerald-800">AI 채점 완료!</div>
-              <div className="text-xs text-emerald-600">교수님 검토 후 최종 확정됩니다</div>
-            </div>
-            <div className="text-right">
-              <div className="text-4xl font-900 text-emerald-700">{result.ai_score}점</div>
-              <div className="text-xs text-emerald-500">/{totalPts}점</div>
+              <div className="text-sm font-700 text-amber-800">제출이 완료되었습니다!</div>
+              <div className="text-xs text-amber-600 mt-0.5">교수님이 AI 채점을 검토 후 성적을 공지하면 알림이 전송됩니다.</div>
             </div>
           </div>
-
-          <ProgressBar value={result.ai_score} max={totalPts} color="#10b981" />
-
-          <div className="mt-4 p-3 bg-white/70 border border-emerald-100 rounded-xl">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-5 h-5 bg-indigo-600 rounded-md flex items-center justify-center">
-                <span className="text-white text-xs font-800">1</span>
-              </div>
-              <span className="text-xs font-700 text-slate-700">점수 산출 근거</span>
-            </div>
-            <p className="text-xs text-slate-600 leading-relaxed mb-3">{result.section1_summary}</p>
-            <div className="space-y-1.5">
-              {result.rubric_scores.map((r, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <span className="text-slate-500 flex-1 truncate">{r.rubric_text}</span>
-                  <span className={`font-700 flex-shrink-0 ${r.score === r.max_pts ? 'text-emerald-600' : r.score >= r.max_pts * 0.8 ? 'text-indigo-600' : 'text-amber-600'}`}>
-                    {r.score}/{r.max_pts}
-                  </span>
-                </div>
-              ))}
-            </div>
+          <div className="flex items-center gap-2 p-3 bg-white/70 border border-amber-100 rounded-xl text-xs text-amber-700">
+            <RefreshCw size={12} className="animate-spin flex-shrink-0" style={{ animationDuration: '3s' }} />
+            성적 공지 전까지 점수가 공개되지 않습니다. 알림을 통해 안내드립니다.
           </div>
-
-          <div className="mt-3 p-3 bg-white/70 border border-emerald-100 rounded-xl">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-5 h-5 bg-emerald-600 rounded-md flex items-center justify-center">
-                <span className="text-white text-xs font-800">2</span>
-              </div>
-              <span className="text-xs font-700 text-slate-700">성적 향상 가이드</span>
-            </div>
-            <div className="space-y-1.5">
-              {result.section2_items.map((item, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs">
-                  <span className="text-emerald-600 font-800 flex-shrink-0">{i + 1}.</span>
-                  <div>
-                    <span className="text-slate-700">{item.action}</span>
-                    <span className="ml-2 text-emerald-600 font-700">→ {item.impact}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <div className="mt-3 flex gap-2">
-            <Button variant="ghost" size="sm" onClick={reset}>재제출하기</Button>
+            <Button variant="ghost" size="sm" onClick={() => setSubmitted(false)}>재제출하기</Button>
             <Button variant="ghost" size="sm" onClick={handleBackToList}>
               <ChevronLeft size={13} /> 과제 목록으로
             </Button>
-            <span className="text-xs text-slate-400 self-center">성적 리포트 탭에서 상세 내역을 확인하세요.</span>
           </div>
         </Card>
       )}
 
-      {/* Submission Form */}
-      {!result && (
+      {/* 제출 폼 */}
+      {!submitted && (
         <Card>
           <CardHeader
             title="과제 제출"
@@ -338,8 +272,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
           {error && (
             <div className="mb-3 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
-              <AlertCircle size={13} />
-              {error}
+              <AlertCircle size={13} />{error}
               <button className="ml-auto" onClick={() => setError(null)}><X size={13} /></button>
             </div>
           )}
@@ -406,7 +339,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
                 <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
                 <div>
                   <div className="text-sm font-700 text-indigo-700">AI 채점 진행 중...</div>
-                  <div className="text-xs text-indigo-500 transition-all">{GRADING_MESSAGES[gradingMsg]}</div>
+                  <div className="text-xs text-indigo-500">{GRADING_MESSAGES[gradingMsg]}</div>
                 </div>
                 <span className="inline-flex items-center gap-1 ml-auto bg-indigo-600 text-white text-xs font-700 px-2.5 py-1 rounded-full">
                   <Sparkles size={10} /> AI 분석
@@ -429,7 +362,7 @@ export default function AssignmentSubmit({ user }: { user: AuthUser }) {
 
           <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
             <FileCheck size={12} />
-            제출 후 AI가 루브릭 기준에 따라 즉시 채점하고 상세 피드백을 제공합니다.
+            제출 후 교수님 검토를 거쳐 성적이 공개됩니다. 공개 시 알림이 전송됩니다.
           </div>
         </Card>
       )}
