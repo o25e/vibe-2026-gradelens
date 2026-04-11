@@ -115,16 +115,16 @@ export default function LoginPage() {
         <div className="relative space-y-8">
           <div>
             <h2 className="text-3xl font-800 text-white leading-tight">
-              AI가 채점하고,<br />교수님이 확인합니다
+              AI 채점 어시스턴트,<br />교육 혁신에 날개를 달다
             </h2>
             <p className="mt-4 text-indigo-200 text-sm leading-relaxed">
-              GradeLens는 AI 기반 자동 채점으로 교수님의 채점 부담을 줄이고,<br />
+              GradeLens는 AI 기반 1차 채점으로 교수님의 채점 부담을 줄이고,<br />
               학생에게는 투명한 성적 피드백을 제공합니다.
             </p>
           </div>
           <div className="space-y-3">
             {[
-              'AI가 루브릭 기반으로 자동 채점',
+              'AI가 루브릭 기반으로 1차 채점',
               '교수님이 최종 점수를 검토 · 확정',
               '학생은 상세한 AI 피드백 리포트 확인',
               '성적 분포 시뮬레이션으로 공정한 등급 산출',
