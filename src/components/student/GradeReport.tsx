@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
-import { TrendingUp, BookOpen, CheckCircle2, ArrowRight, Target, RefreshCw, FileText } from 'lucide-react'
+import { TrendingUp, BookOpen, CheckCircle2, ArrowRight, Target, RefreshCw, FileText, Clock, ChevronLeft } from 'lucide-react'
 import { Card, CardHeader, Badge, ProgressBar, Avatar, Button } from '@/components/ui'
 import { ASSIGNMENT_HISTORY } from '@/lib/mockData'
 import type { AuthUser } from '@/lib/auth'
@@ -12,6 +12,7 @@ interface RadarScores { 논리력: number; 자료활용도: number; 가독성: n
 
 interface Submission {
   id: string
+  assignment_id: string
   assignment_title: string
   course: string
   submitted_at: string
@@ -41,30 +42,53 @@ const CATEGORY_COLOR: Record<string, string> = {
   structure: 'bg-violet-50 text-violet-700 border-violet-200',
 }
 
-export default function GradeReport({ user }: { user: AuthUser }) {
+export default function GradeReport({
+  user,
+  assignmentId,
+  onBack,
+}: {
+  user: AuthUser
+  assignmentId?: string
+  onBack?: () => void
+}) {
   const [submission, setSubmission] = useState<Submission | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchLatest = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/submissions')
+      const res = await fetch('/api/submissions', { cache: 'no-store' })
       const data = await res.json()
-      if (data.submissions?.length > 0) {
-        setSubmission(data.submissions[0])
+      const list: Submission[] = data.submissions ?? []
+
+      if (assignmentId) {
+        // 특정 과제 제출 찾기
+        const found = list.find(s => s.assignment_id === assignmentId) ?? null
+        setSubmission(found)
       } else {
-        setSubmission(null)
+        // 최신 제출 (기존 동작)
+        setSubmission(list.length > 0 ? list[0] : null)
       }
     } catch {
       setError('데이터를 불러오는 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [assignmentId])
 
-  useEffect(() => { fetchLatest() }, [fetchLatest])
+  useEffect(() => { fetchData() }, [fetchData])
+
+  // 뒤로가기 버튼
+  const BackButton = onBack ? (
+    <button
+      onClick={onBack}
+      className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors mb-4"
+    >
+      <ChevronLeft size={15} /> 과제 목록으로
+    </button>
+  ) : null
 
   if (loading) {
     return (
@@ -80,28 +104,50 @@ export default function GradeReport({ user }: { user: AuthUser }) {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
+        {BackButton}
         <p className="text-sm text-red-500">{error}</p>
-        <Button variant="ghost" size="sm" onClick={fetchLatest}><RefreshCw size={13} /> 다시 시도</Button>
+        <Button variant="ghost" size="sm" onClick={fetchData}><RefreshCw size={13} /> 다시 시도</Button>
       </div>
     )
   }
 
-  // No submission yet
+  // 제출했지만 교수가 아직 공지하지 않은 경우
+  if (submission && (submission.grade_status === 'waiting' || (submission.ai_score === null && submission.confirmed_score === null))) {
+    return (
+      <div className="space-y-4">
+        {BackButton}
+        <div className="flex flex-col items-center justify-center h-64 gap-4 text-slate-400">
+          <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center">
+            <Clock size={28} className="text-amber-400 animate-pulse" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-600 text-slate-700">과제 제출 완료 — 교수님 채점 대기 중</p>
+            <p className="text-xs mt-1 text-slate-400">채점이 완료되면 알림을 통해 안내드립니다.</p>
+            <p className="text-xs mt-1 text-slate-300">제출 과제: {submission.assignment_title}</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={fetchData}><RefreshCw size={13} /> 새로고침</Button>
+        </div>
+      </div>
+    )
+  }
+
+  // 제출 없음
   if (!submission || submission.ai_score === null) {
     return (
       <div className="space-y-4">
+        {BackButton}
         <div className="flex flex-col items-center justify-center h-64 gap-4 text-slate-400">
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center">
             <FileText size={28} className="opacity-40" />
           </div>
           <div className="text-center">
             <p className="text-sm font-600 text-slate-600">아직 제출한 과제가 없습니다</p>
-            <p className="text-xs mt-1">과제 목록 탭에서 과제를 제출하면 AI 피드백 리포트가 표시됩니다.</p>
+            <p className="text-xs mt-1">과제 목록에서 과제를 제출하면 AI 피드백 리포트가 표시됩니다.</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={fetchLatest}><RefreshCw size={13} /> 새로고침</Button>
+          <Button variant="ghost" size="sm" onClick={fetchData}><RefreshCw size={13} /> 새로고침</Button>
         </div>
 
-        {/* Static history */}
+        {/* 히스토리 (성적 미공개 시에도 표시) */}
         <Card>
           <CardHeader
             title="과제 성적 히스토리"
@@ -154,6 +200,9 @@ export default function GradeReport({ user }: { user: AuthUser }) {
 
   return (
     <div className="space-y-4">
+      {/* 뒤로가기 */}
+      {BackButton}
+
       {/* Hero Score Card */}
       <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-6 text-white relative overflow-hidden">
         <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
@@ -167,6 +216,7 @@ export default function GradeReport({ user }: { user: AuthUser }) {
                 {user.studentId ? `학번 ${user.studentId}` : ''}
                 {user.department ? ` · ${user.department}` : ''}
               </div>
+              <div className="text-indigo-300 text-xs mt-0.5">{submission.assignment_title}</div>
             </div>
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -202,7 +252,7 @@ export default function GradeReport({ user }: { user: AuthUser }) {
             <div className="text-indigo-200 text-xs mt-1">
               제출: {new Date(submission.submitted_at).toLocaleDateString('ko-KR')}
             </div>
-            <button onClick={fetchLatest} className="text-indigo-300 hover:text-white mt-1 transition-colors">
+            <button onClick={fetchData} className="text-indigo-300 hover:text-white mt-1 transition-colors">
               <RefreshCw size={12} />
             </button>
           </div>

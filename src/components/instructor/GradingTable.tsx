@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import {
-  CheckCircle2, Bell, Flag, AlertCircle, RefreshCw, Sparkles,
+  CheckCircle2, Bell, AlertCircle, RefreshCw, Sparkles,
   FileText, Image, File, ChevronDown, ChevronUp, Eye,
 } from 'lucide-react'
 import { Button, Card, CardHeader, Badge, Avatar, Modal, StatCard } from '@/components/ui'
@@ -23,15 +23,9 @@ interface Submission {
   feedback_short: string | null
   rubric_scores: { rubric_text: string; max_pts: number; score: number; reason: string }[] | null
   grade_id: string | null
+  is_published: number
 }
 
-const statusConfig: Record<GradeStatus, { label: string; variant: 'success' | 'warning' | 'danger' }> = {
-  confirmed: { label: '확정', variant: 'success' },
-  pending:   { label: '검토 대기', variant: 'warning' },
-  flagged:   { label: '요주의', variant: 'danger' },
-}
-
-// ── File type helpers ────────────────────────────────────────────────────────
 function getFileType(fileName: string): 'image' | 'pdf' | 'text' | 'other' {
   const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
@@ -49,12 +43,8 @@ function FilePreview({ fileName }: { fileName: string }) {
     other: <File size={14} className="text-slate-400" />,
   }
   const labels: Record<typeof type, string> = {
-    image: '이미지 파일',
-    pdf:   'PDF 문서',
-    text:  '텍스트 파일',
-    other: '첨부 파일',
+    image: '이미지 파일', pdf: 'PDF 문서', text: '텍스트 파일', other: '첨부 파일',
   }
-
   return (
     <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
       <div className="w-7 h-7 bg-white border border-slate-200 rounded-md flex items-center justify-center flex-shrink-0">
@@ -66,30 +56,24 @@ function FilePreview({ fileName }: { fileName: string }) {
       </div>
       {(type === 'image' || type === 'pdf') && (
         <div className="flex items-center gap-1 text-xs text-slate-400 bg-slate-100 rounded px-2 py-1 flex-shrink-0">
-          <Eye size={11} />
-          <span>파일 서버 연동 시 미리보기 가능</span>
+          <Eye size={11} /><span>파일 서버 연동 시 미리보기 가능</span>
         </div>
       )}
     </div>
   )
 }
 
-// ── Submission content viewer (collapsible) ──────────────────────────────────
 function SubmissionContentViewer({ content, fileName }: { content: string | null; fileName: string | null }) {
   const [expanded, setExpanded] = useState(true)
-
   const hasContent = content && content.trim().length > 0
   const hasFile = !!fileName
-
   if (!hasContent && !hasFile) {
     return (
       <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-400">
-        <FileText size={13} />
-        제출된 내용이 없습니다.
+        <FileText size={13} />제출된 내용이 없습니다.
       </div>
     )
   }
-
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden">
       <button
@@ -105,15 +89,11 @@ function SubmissionContentViewer({ content, fileName }: { content: string | null
             </span>
           )}
         </div>
-        {expanded
-          ? <ChevronUp size={14} className="text-slate-400" />
-          : <ChevronDown size={14} className="text-slate-400" />}
+        {expanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
       </button>
-
       {expanded && (
         <div className="p-4 space-y-3 bg-white">
           {hasFile && <FilePreview fileName={fileName!} />}
-
           {hasContent ? (
             <div
               className="text-xs text-slate-700 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 max-h-52 overflow-y-auto"
@@ -130,10 +110,7 @@ function SubmissionContentViewer({ content, fileName }: { content: string | null
   )
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
-interface Props {
-  assignmentId?: string
-}
+interface Props { assignmentId?: string }
 
 export default function GradingTable({ assignmentId }: Props) {
   const [submissions, setSubmissions] = useState<Submission[]>([])
@@ -142,7 +119,6 @@ export default function GradingTable({ assignmentId }: Props) {
   const [editFeedback, setEditFeedback] = useState('')
   const [editScore, setEditScore] = useState('')
   const [saving, setSaving] = useState(false)
-  const [notified, setNotified] = useState(false)
 
   const fetchSubmissions = useCallback(async () => {
     if (!assignmentId) return
@@ -164,7 +140,8 @@ export default function GradingTable({ assignmentId }: Props) {
     setEditScore(String(s.confirmed_score ?? s.ai_score ?? ''))
   }
 
-  const saveModal = async () => {
+  // andPublish: true면 학생에게 공지도 함께
+  const saveModal = async (andPublish: boolean) => {
     if (!modal || !modal.grade_id) return
     setSaving(true)
     try {
@@ -175,12 +152,14 @@ export default function GradingTable({ assignmentId }: Props) {
           confirmed_score: parseInt(editScore) || modal.ai_score,
           feedback_short: editFeedback,
           status: 'confirmed',
+          ...(andPublish ? { publish: true } : {}),
         }),
       })
       if (res.ok) {
+        const newScore = parseInt(editScore) || modal.ai_score
         setSubmissions(prev => prev.map(s =>
           s.id === modal.id
-            ? { ...s, confirmed_score: parseInt(editScore) || s.ai_score, feedback_short: editFeedback, grade_status: 'confirmed' }
+            ? { ...s, confirmed_score: newScore, feedback_short: editFeedback, grade_status: 'confirmed', is_published: andPublish ? 1 : s.is_published }
             : s
         ))
         setModal(null)
@@ -190,18 +169,20 @@ export default function GradingTable({ assignmentId }: Props) {
     }
   }
 
-  const bulkApprove = async () => {
-    const pending = submissions.filter(s => s.grade_status !== 'flagged' && s.grade_id)
-    await Promise.all(pending.map(s =>
+  // 일괄 공지: 미공지 항목 전체 저장 + 공지
+  const bulkPublish = async () => {
+    const targets = submissions.filter(s => s.grade_id && s.is_published !== 1)
+    if (targets.length === 0) return
+    await Promise.all(targets.map(s =>
       fetch(`/api/grades/${s.grade_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmed_score: s.ai_score, status: 'confirmed' }),
+        body: JSON.stringify({ confirmed_score: s.ai_score, status: 'confirmed', publish: true }),
       })
     ))
     setSubmissions(prev => prev.map(s =>
-      s.grade_status !== 'flagged'
-        ? { ...s, confirmed_score: s.confirmed_score ?? s.ai_score, grade_status: 'confirmed' }
+      targets.find(t => t.id === s.id)
+        ? { ...s, confirmed_score: s.confirmed_score ?? s.ai_score, grade_status: 'confirmed', is_published: 1 }
         : s
     ))
   }
@@ -220,6 +201,7 @@ export default function GradingTable({ assignmentId }: Props) {
   const confirmed = submissions.filter(s => s.grade_status === 'confirmed').length
   const pending = submissions.filter(s => s.grade_status === 'pending').length
   const flagged = submissions.filter(s => s.grade_status === 'flagged').length
+  const published = submissions.filter(s => s.is_published === 1).length
   const avgAi = submissions.length > 0
     ? Math.round(submissions.filter(s => s.ai_score !== null).reduce((a, s) => a + (s.ai_score ?? 0), 0) / Math.max(1, submissions.filter(s => s.ai_score !== null).length))
     : 0
@@ -230,25 +212,16 @@ export default function GradingTable({ assignmentId }: Props) {
       <Card>
         <CardHeader
           title="AI 자동 채점 현황 및 교수 검토"
-          subtitle={`전체 ${submissions.length}명 제출 · 확정 ${confirmed}명 · 대기 ${pending}명 · 요주의 ${flagged}명`}
+          subtitle={`전체 ${submissions.length}명 · 확정 ${confirmed}명 · 대기 ${pending}명 · 요주의 ${flagged}명 · 공지됨 ${published}명`}
           actions={
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={fetchSubmissions} disabled={loading}>
                 <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> 새로고침
               </Button>
               {submissions.length > 0 && (
-                <>
-                  <Button variant="success" size="sm" onClick={bulkApprove}>
-                    <CheckCircle2 size={13} /> 일괄 승인
-                  </Button>
-                  <Button
-                    variant={notified ? 'ghost' : 'outline'}
-                    size="sm"
-                    onClick={() => { setNotified(true); setTimeout(() => setNotified(false), 3000) }}
-                  >
-                    <Bell size={13} /> {notified ? '공지 완료!' : '성적 공지'}
-                  </Button>
-                </>
+                <Button variant="primary" size="sm" onClick={bulkPublish}>
+                  <Bell size={13} /> 전체 공지
+                </Button>
               )}
             </div>
           }
@@ -268,14 +241,14 @@ export default function GradingTable({ assignmentId }: Props) {
               <StatCard label="AI 평균" value={`${avgAi}점`} color="blue" />
               <StatCard label="최고점" value={scores.length ? `${Math.max(...scores)}점` : '—'} color="green" />
               <StatCard label="최저점" value={scores.length ? `${Math.min(...scores)}점` : '—'} color="red" />
-              <StatCard label="확정 완료율" value={submissions.length ? `${Math.round(confirmed / submissions.length * 100)}%` : '—'} color="amber" />
+              <StatCard label="공지 완료율" value={submissions.length ? `${Math.round(published / submissions.length * 100)}%` : '—'} color="amber" />
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200">
-                    {['학생', 'AI 점수', '교수 확정', '상태', 'AI 피드백 요약', '액션'].map(h => (
+                    {['학생', 'AI 점수', '교수 확정', '공지 상태', 'AI 피드백 요약', '액션'].map(h => (
                       <th key={h} className="px-3 py-2.5 text-left text-xs font-700 text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -295,11 +268,7 @@ export default function GradingTable({ assignmentId }: Props) {
                             <div className="text-xs text-slate-400 flex items-center gap-1.5">
                               <span>{s.student_number}</span>
                               {s.file_name && (
-                                <>
-                                  <span>·</span>
-                                  <File size={10} className="text-slate-400" />
-                                  <span className="truncate max-w-[80px]">{s.file_name}</span>
-                                </>
+                                <><span>·</span><File size={10} className="text-slate-400" /><span className="truncate max-w-[80px]">{s.file_name}</span></>
                               )}
                             </div>
                           </div>
@@ -316,12 +285,11 @@ export default function GradingTable({ assignmentId }: Props) {
                           : <span className="text-slate-300 text-sm">—</span>}
                       </td>
                       <td className="px-3 py-2.5">
-                        <Badge variant={statusConfig[s.grade_status].variant}>
-                          {s.grade_status === 'flagged' && <Flag size={9} />}
-                          {statusConfig[s.grade_status].label}
-                        </Badge>
+                        {s.is_published === 1
+                          ? <Badge variant="success"><Bell size={9} /> 공지됨</Badge>
+                          : <Badge variant="gray">미공지</Badge>}
                       </td>
-                      <td className="px-3 py-2.5 max-w-[220px]">
+                      <td className="px-3 py-2.5 max-w-[200px]">
                         <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{s.feedback_short ?? '—'}</p>
                       </td>
                       <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
@@ -329,7 +297,7 @@ export default function GradingTable({ assignmentId }: Props) {
                           onClick={() => openModal(s)}
                           className="text-xs font-600 text-indigo-600 hover:text-indigo-800 px-2.5 py-1 rounded-md hover:bg-indigo-50 transition-colors"
                         >
-                          {s.grade_status === 'confirmed' ? '수정' : '검토 →'}
+                          {s.is_published === 1 ? '수정/재공지' : '검토 →'}
                         </button>
                       </td>
                     </tr>
@@ -341,33 +309,32 @@ export default function GradingTable({ assignmentId }: Props) {
         )}
       </Card>
 
-      {/* ── Review Modal ── */}
+      {/* ── 채점 검토 모달 ── */}
       <Modal
         open={!!modal}
         onClose={() => setModal(null)}
         title={`${modal?.student_name} · 채점 검토`}
         subtitle={`학번 ${modal?.student_number} · 제출 ${modal?.submitted_at ? new Date(modal.submitted_at).toLocaleDateString('ko-KR') : ''} · ${modal?.word_count?.toLocaleString()}자`}
         footer={
-          <>
+          <div className="flex gap-2 justify-end">
             <Button variant="ghost" size="sm" onClick={() => setModal(null)}>취소</Button>
-            <Button size="sm" onClick={saveModal} disabled={saving}>
-              {saving
-                ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> 저장 중...</>
-                : <><CheckCircle2 size={13} /> 저장 및 확정</>
-              }
+            <Button variant="outline" size="sm" onClick={() => saveModal(false)} disabled={saving}>
+              {saving ? <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 size={13} />}
+              저장만
             </Button>
-          </>
+            <Button size="sm" onClick={() => saveModal(true)} disabled={saving}>
+              {saving
+                ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <Bell size={13} />}
+              저장 + 학생 공지
+            </Button>
+          </div>
         }
       >
         {modal && (
           <div className="space-y-4">
-            {/* ── 제출 내용 ── */}
-            <SubmissionContentViewer
-              content={modal.content}
-              fileName={modal.file_name}
-            />
+            <SubmissionContentViewer content={modal.content} fileName={modal.file_name} />
 
-            {/* ── 채점 ── */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-600 text-slate-500 mb-1.5">AI 제안 점수</label>
@@ -382,8 +349,7 @@ export default function GradingTable({ assignmentId }: Props) {
                 <input
                   value={editScore}
                   onChange={e => setEditScore(e.target.value)}
-                  type="number"
-                  min="0" max="100"
+                  type="number" min="0" max="100"
                   className="w-full px-3 py-2 text-sm border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 text-slate-800"
                 />
               </div>
@@ -391,7 +357,7 @@ export default function GradingTable({ assignmentId }: Props) {
 
             {modal.rubric_scores && (
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
-                <div className="text-xs font-700 text-slate-500 mb-2">루브릭별 점수</div>
+                <div className="text-xs font-700 text-slate-500 mb-2">루브릭별 AI 점수</div>
                 {modal.rubric_scores.map((r, i) => (
                   <div key={i} className="space-y-0.5">
                     <div className="flex items-center justify-between text-xs">
@@ -400,9 +366,7 @@ export default function GradingTable({ assignmentId }: Props) {
                         {r.score}/{r.max_pts}
                       </span>
                     </div>
-                    {r.reason && (
-                      <p className="text-xs text-slate-400 pl-1 leading-snug">{r.reason}</p>
-                    )}
+                    {r.reason && <p className="text-xs text-slate-400 pl-1 leading-snug">{r.reason}</p>}
                   </div>
                 ))}
               </div>
@@ -412,8 +376,15 @@ export default function GradingTable({ assignmentId }: Props) {
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <AlertCircle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-amber-700">
-                  AI 점수와 {Math.abs(parseInt(editScore) - (modal.ai_score ?? 0))}점 차이가 납니다. 학생에게 조정 사유가 안내됩니다.
+                  AI 점수와 {Math.abs(parseInt(editScore) - (modal.ai_score ?? 0))}점 차이가 납니다.
                 </p>
+              </div>
+            )}
+
+            {modal.is_published === 1 && (
+              <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <Bell size={13} className="text-emerald-600" />
+                <p className="text-xs text-emerald-700">이미 학생에게 공지된 성적입니다. 재공지 시 수정 알림이 전송됩니다.</p>
               </div>
             )}
 

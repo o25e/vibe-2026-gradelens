@@ -4,7 +4,7 @@ import db from '@/lib/db'
 import { getSession } from '@/lib/session'
 import { gradeSubmission } from '@/lib/grading'
 
-// GET /api/submissions — instructor: all for an assignment; student: own submissions
+// GET /api/submissions
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -13,12 +13,15 @@ export async function GET(req: NextRequest) {
   const assignmentId = searchParams.get('assignment_id')
 
   let rows: unknown[]
+
   if (session.role === 'instructor') {
+    // 교수: 과제별 전체 제출 현황 (is_published 포함)
     if (!assignmentId) return NextResponse.json({ error: 'assignment_id required' }, { status: 400 })
     rows = db.prepare(`
       SELECT s.*, u.name as student_name, u.student_id as student_number, u.department,
              g.ai_score, g.confirmed_score, g.status as grade_status, g.feedback_short,
-             g.rubric_scores, g.radar_scores, g.section1_summary, g.section2_items, g.id as grade_id
+             g.rubric_scores, g.radar_scores, g.section1_summary, g.section2_items,
+             g.id as grade_id, g.is_published
       FROM submissions s
       JOIN users u ON u.id = s.student_id
       LEFT JOIN grades g ON g.submission_id = s.id
@@ -26,10 +29,19 @@ export async function GET(req: NextRequest) {
       ORDER BY s.submitted_at DESC
     `).all(assignmentId)
   } else {
+    // 학생: 본인 제출 목록 — 미공지 성적은 숨김
     rows = db.prepare(`
-      SELECT s.*, a.title as assignment_title, a.course,
-             g.ai_score, g.confirmed_score, g.status as grade_status, g.feedback_short,
-             g.rubric_scores, g.radar_scores, g.section1_summary, g.section2_items, g.id as grade_id
+      SELECT s.id, s.assignment_id, s.submitted_at, s.word_count, s.file_name,
+             a.title as assignment_title, a.course,
+             CASE WHEN g.is_published = 1 THEN g.ai_score    ELSE NULL END as ai_score,
+             CASE WHEN g.is_published = 1 THEN g.confirmed_score ELSE NULL END as confirmed_score,
+             CASE WHEN g.is_published = 1 THEN g.status      ELSE 'waiting' END as grade_status,
+             CASE WHEN g.is_published = 1 THEN g.feedback_short ELSE NULL END as feedback_short,
+             CASE WHEN g.is_published = 1 THEN g.rubric_scores  ELSE NULL END as rubric_scores,
+             CASE WHEN g.is_published = 1 THEN g.radar_scores   ELSE NULL END as radar_scores,
+             CASE WHEN g.is_published = 1 THEN g.section1_summary ELSE NULL END as section1_summary,
+             CASE WHEN g.is_published = 1 THEN g.section2_items  ELSE NULL END as section2_items,
+             g.id as grade_id
       FROM submissions s
       JOIN assignments a ON a.id = s.assignment_id
       LEFT JOIN grades g ON g.submission_id = s.id
@@ -45,10 +57,12 @@ export async function GET(req: NextRequest) {
     section2_items: r.section2_items ? JSON.parse(r.section2_items as string) : null,
   }))
 
-  return NextResponse.json({ submissions })
+  return NextResponse.json({ submissions }, {
+    headers: { 'Cache-Control': 'no-store' },
+  })
 }
 
-// POST /api/submissions — student submits + triggers AI grading
+// POST /api/submissions — 학생 과제 제출 + AI 자동 채점 (결과는 교수 공지 전 비공개)
 export async function POST(req: NextRequest) {
   const session = await getSession(req)
   if (!session || session.role !== 'student') {
@@ -74,7 +88,6 @@ export async function POST(req: NextRequest) {
   }
 
   const wordCount = content.trim().split(/\s+/).filter(Boolean).length
-
   const submissionId = randomUUID()
   const gradeId = randomUUID()
 
@@ -85,7 +98,6 @@ export async function POST(req: NextRequest) {
   const finalSubmissionId = existing?.id ?? submissionId
 
   if (existing) {
-    // 재제출: 기존 ID 유지하고 내용만 업데이트
     db.prepare(`
       UPDATE submissions SET content = ?, file_name = ?, word_count = ?, submitted_at = datetime('now')
       WHERE id = ?
@@ -97,10 +109,10 @@ export async function POST(req: NextRequest) {
     `).run(submissionId, assignment_id, session.id, content.trim(), file_name ?? null, wordCount)
   }
 
-  // Remove old grade if resubmitting
+  // 기존 성적 삭제 (재제출)
   db.prepare('DELETE FROM grades WHERE submission_id = ?').run(finalSubmissionId)
 
-  // AI grading
+  // AI 채점 (결과는 DB에만 저장, 학생에게 즉시 공개 안 함)
   const result = await gradeSubmission({
     assignmentTitle: assignment.title as string,
     assignmentDescription: assignment.description as string,
@@ -124,16 +136,9 @@ export async function POST(req: NextRequest) {
     result.feedback_short,
   )
 
+  // 학생에게는 제출 완료 + 대기 상태만 반환 (점수 비공개)
   return NextResponse.json({
     submission_id: finalSubmissionId,
-    grade: {
-      ai_score: result.total_score,
-      status: flagged ? 'flagged' : 'pending',
-      rubric_scores: result.rubric_scores,
-      radar_scores: result.radar_scores,
-      section1_summary: result.section1_summary,
-      section2_items: result.section2_items,
-      feedback_short: result.feedback_short,
-    },
+    waiting: true,
   }, { status: 201 })
 }
