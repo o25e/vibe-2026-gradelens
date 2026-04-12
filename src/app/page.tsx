@@ -7,7 +7,7 @@ import {
   FileText, LogOut, CheckCircle2, Calendar, Plus, Clock, Trash2,
   RefreshCw, MessageSquare,
 } from 'lucide-react'
-import { MOCK_STUDENTS, MOCK_ASSIGNMENT } from '@/lib/mockData'
+import { MOCK_STUDENTS } from '@/lib/mockData'
 import { getCurrentUser, logout } from '@/lib/auth'
 import type { AuthUser } from '@/lib/auth'
 import RubricBuilder from '@/components/instructor/RubricBuilder'
@@ -949,18 +949,37 @@ function InstructorCourseListPage({
 
 // ── Info Bar ─────────────────────────────────────────────────────────────────
 function DashboardInfoBar({
-  students, courseName, selectedAssignment, view,
+  courseName, selectedAssignment, view,
 }: {
-  students: Student[]; courseName: string
+  courseName: string
   selectedAssignment?: AssignmentItem | null
   view: ViewMode
 }) {
-  // 교수 모드 전용 통계
-  const confirmed = students.filter(s => s.status === 'confirmed')
-  const completionPct = students.length ? Math.round(confirmed.length / students.length * 100) : 0
-  const avgScore = confirmed.length > 0
-    ? Math.round(confirmed.reduce((a, s) => a + (s.confirmedScore ?? s.aiScore), 0) / confirmed.length)
-    : 0
+  // 교수 모드 전용 통계 (선택된 과제 기반 실시간 fetch)
+  const [instructorStats, setInstructorStats] = useState<{
+    totalStudents: number; completionPct: number; avgScore: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (view !== 'instructor' || !selectedAssignment) {
+      setInstructorStats(null)
+      return
+    }
+    fetch(`/api/submissions?assignment_id=${selectedAssignment.id}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => {
+        const subs: Record<string, unknown>[] = data.submissions ?? []
+        const total = subs.length
+        const published = subs.filter(s => s.is_published === 1).length
+        const completionPct = total > 0 ? Math.round(published / total * 100) : 0
+        const scored = subs.filter(s => s.confirmed_score !== null || s.ai_score !== null)
+        const avgScore = scored.length > 0
+          ? Math.round(scored.reduce((a, s) => a + ((s.confirmed_score ?? s.ai_score ?? 0) as number), 0) / scored.length)
+          : 0
+        setInstructorStats({ totalStudents: total, completionPct, avgScore })
+      })
+      .catch(() => {})
+  }, [view, selectedAssignment])
 
   // 학생 모드 전용 통계: 미제출 과제 수, 미읽은 알림 수
   const [studentStats, setStudentStats] = useState({ remaining: 0, unreadNotifs: 0 })
@@ -1049,33 +1068,37 @@ function DashboardInfoBar({
     <div className="bg-white border-b border-slate-200 px-6 py-2.5">
       <div className="flex items-center justify-between">
 
-        {/* 왼쪽: 교수 모드는 수강생 통계, 학생 모드는 학기·과목 정보 */}
+        {/* 왼쪽: 교수 모드는 과제 선택 시 실제 통계, 학생 모드는 학기·과목 정보 */}
         {view === 'instructor' ? (
-          <div className="flex items-center gap-5">
-            <div className="flex items-center gap-1.5">
-              <Users size={13} className="text-slate-400" />
-              <div>
-                <div className="text-xs text-slate-400 leading-none mb-0.5">총 수강생</div>
-                <div className="text-sm font-700 text-slate-800 leading-none">{students.length}명</div>
+          instructorStats ? (
+            <div className="flex items-center gap-5">
+              <div className="flex items-center gap-1.5">
+                <Users size={13} className="text-slate-400" />
+                <div>
+                  <div className="text-xs text-slate-400 leading-none mb-0.5">제출자</div>
+                  <div className="text-sm font-700 text-slate-800 leading-none">{instructorStats.totalStudents}명</div>
+                </div>
+              </div>
+              <div className="w-px h-7 bg-slate-100" />
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 size={13} className="text-emerald-500" />
+                <div>
+                  <div className="text-xs text-slate-400 leading-none mb-0.5">채점 완료</div>
+                  <div className="text-sm font-700 text-emerald-600 leading-none">{instructorStats.completionPct}%</div>
+                </div>
+              </div>
+              <div className="w-px h-7 bg-slate-100" />
+              <div className="flex items-center gap-1.5">
+                <BarChart3 size={13} className="text-indigo-500" />
+                <div>
+                  <div className="text-xs text-slate-400 leading-none mb-0.5">전체 평균</div>
+                  <div className="text-sm font-700 text-indigo-600 leading-none">{instructorStats.avgScore || '—'}점</div>
+                </div>
               </div>
             </div>
-            <div className="w-px h-7 bg-slate-100" />
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 size={13} className="text-emerald-500" />
-              <div>
-                <div className="text-xs text-slate-400 leading-none mb-0.5">채점 완료</div>
-                <div className="text-sm font-700 text-emerald-600 leading-none">{completionPct}%</div>
-              </div>
-            </div>
-            <div className="w-px h-7 bg-slate-100" />
-            <div className="flex items-center gap-1.5">
-              <BarChart3 size={13} className="text-indigo-500" />
-              <div>
-                <div className="text-xs text-slate-400 leading-none mb-0.5">전체 평균</div>
-                <div className="text-sm font-700 text-indigo-600 leading-none">{avgScore || '—'}점</div>
-              </div>
-            </div>
-            </div>
+          ) : (
+            <div />
+          )
         ) : (
           /* 학생 모드: 남은 과제 수 + 새 알림 수 */
           <div className="flex items-center gap-5">
@@ -1532,7 +1555,7 @@ export default function Dashboard() {
           onNavigateInquiry={view === 'instructor' ? handleInquiryNavigate : undefined}
           onOpenChatBot={view === 'student' ? () => setChatBotOpen(true) : undefined}
         />
-        <DashboardInfoBar students={students} courseName={courseName} selectedAssignment={selectedAssignment} view={view} />
+        <DashboardInfoBar courseName={courseName} selectedAssignment={selectedAssignment} view={view} />
         <main className="flex-1 overflow-y-auto" style={{ padding: '20px 24px' }}>
 
           {/* ── 교수: 나의 강의 — 강의 목록 ── */}
