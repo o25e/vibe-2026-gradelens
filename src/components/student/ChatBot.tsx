@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { MessageCircle, X, Send, Bot, Sparkles, PhoneCall, AlertCircle, CheckCircle2, GraduationCap } from 'lucide-react'
+import { MessageCircle, X, Send, Bot, Sparkles, AlertCircle, CheckCircle2, GraduationCap } from 'lucide-react'
 import type { ChatMessage } from '@/lib/mockData'
 
 const QUICK_QUESTIONS = [
@@ -14,62 +14,6 @@ function now() {
   return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
 }
 
-// ── 긴급 문의 확인 패널 ──────────────────────────────────────────────────────
-function InquiryPanel({
-  onConfirm, onCancel, loading,
-}: {
-  onConfirm: (msg: string) => void
-  onCancel: () => void
-  loading: boolean
-}) {
-  const [msg, setMsg] = useState('')
-  return (
-    <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 flex flex-col items-center justify-center px-5 gap-4">
-      <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-        <PhoneCall size={22} className="text-red-500" />
-      </div>
-      <div className="text-center">
-        <p className="text-sm font-700 text-slate-800">교수님께 직접 문의</p>
-        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-          교수님의 알림창에 문의 메시지가 전송됩니다.
-        </p>
-      </div>
-      <textarea
-        value={msg}
-        onChange={e => setMsg(e.target.value)}
-        placeholder="문의 내용을 간단히 입력하세요. (선택사항)"
-        rows={3}
-        className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
-      />
-      <div className="flex gap-2 w-full">
-        <button
-          onClick={onCancel}
-          disabled={loading}
-          className="flex-1 py-2 text-xs rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors disabled:opacity-40"
-        >
-          취소
-        </button>
-        <button
-          onClick={() => onConfirm(msg)}
-          disabled={loading}
-          className="flex-1 py-2 text-xs rounded-xl bg-red-500 text-white font-600 hover:bg-red-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
-        >
-          {loading ? (
-            <>
-              <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              전송 중...
-            </>
-          ) : (
-            <>
-              <PhoneCall size={12} />
-              문의 전송
-            </>
-          )}
-        </button>
-      </div>
-    </div>
-  )
-}
 
 // ── 메시지 버블 ───────────────────────────────────────────────────────────────
 function MessageBubble({ m }: { m: ChatMessage }) {
@@ -138,6 +82,7 @@ export default function ChatBot({
   const [showInquiry, setShowInquiry] = useState(false)
   const [inquiryLoading, setInquiryLoading] = useState(false)
   const [inquirySent, setInquirySent] = useState(false)
+  const [inquiryMsg, setInquiryMsg] = useState('')
   // 교수 답변 알림 미확인 수 (FAB 배지)
   const [profUnread, setProfUnread] = useState(0)
   // 이미 챗봇에 삽입한 알림 id 집합 (중복 방지)
@@ -240,6 +185,7 @@ export default function ChatBot({
       })
       setInquirySent(true)
       setShowInquiry(false)
+      setInquiryMsg('')
       setMessages(m => [...m, {
         role: 'bot',
         text: '✅ 교수님께 문의 알림이 전송되었습니다.\n\n교수님의 알림창에 문의 내용이 표시됩니다. 답변이 도착하면 이 채팅창에 표시됩니다!',
@@ -303,43 +249,76 @@ export default function ChatBot({
               </div>
             )}
             <div ref={bottomRef} />
-
-            {showInquiry && (
-              <InquiryPanel
-                onConfirm={handleInquiry}
-                onCancel={() => setShowInquiry(false)}
-                loading={inquiryLoading}
-              />
-            )}
           </div>
 
-          {/* Quick Questions */}
+          {/* Quick Questions + 긴급 문의 영역 */}
           <div className="px-3 pb-2 flex-shrink-0">
-            <div className="flex flex-wrap gap-1 mb-2">
-              {QUICK_QUESTIONS.map((q, i) => (
-                <button key={i} onClick={() => send(q)} disabled={typing}
-                  className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-full px-2.5 py-1 hover:bg-indigo-100 transition-colors font-500 disabled:opacity-40">
-                  {q}
+            {showInquiry ? (
+              /* ── 인라인 문의 패널 ── */
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-700 text-red-700 flex items-center gap-1">
+                    <AlertCircle size={12} /> 교수님께 직접 문의
+                  </p>
+                  <button
+                    onClick={() => { setShowInquiry(false); setInquiryMsg('') }}
+                    className="text-red-300 hover:text-red-500 transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+                <textarea
+                  value={inquiryMsg}
+                  onChange={e => setInquiryMsg(e.target.value)}
+                  placeholder="문의 내용을 입력하세요. (선택사항)"
+                  rows={2}
+                  className="w-full text-xs px-2.5 py-2 border border-red-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setShowInquiry(false); setInquiryMsg('') }}
+                    disabled={inquiryLoading}
+                    className="flex-1 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors disabled:opacity-40"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={() => handleInquiry(inquiryMsg)}
+                    disabled={inquiryLoading}
+                    className="flex-1 py-1.5 text-xs rounded-lg bg-red-500 text-white font-700 hover:bg-red-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-1"
+                  >
+                    {inquiryLoading
+                      ? <><div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />전송 중...</>
+                      : '문의 전송'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ── 기본: 빠른 질문 + 연락 버튼 ── */
+              <>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {QUICK_QUESTIONS.map((q, i) => (
+                    <button key={i} onClick={() => send(q)} disabled={typing}
+                      className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-full px-2.5 py-1 hover:bg-indigo-100 transition-colors font-500 disabled:opacity-40">
+                      {q}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setShowInquiry(true)}
+                  disabled={inquirySent}
+                  className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-700 transition-all ${
+                    inquirySent
+                      ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 cursor-default'
+                      : 'bg-red-500 text-white hover:bg-red-600 active:scale-95 shadow-md shadow-red-200'
+                  }`}
+                >
+                  {inquirySent
+                    ? <><CheckCircle2 size={13} />문의가 전송되었습니다</>
+                    : <><AlertCircle size={13} />교수님께 바로 연락하기</>}
                 </button>
-              ))}
-            </div>
-
-            {/* 교수님께 바로 연락하기 */}
-            <button
-              onClick={() => setShowInquiry(true)}
-              disabled={inquirySent || showInquiry}
-              className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-700 transition-all ${
-                inquirySent
-                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 cursor-default'
-                  : 'bg-red-500 text-white hover:bg-red-600 active:scale-95 shadow-md shadow-red-200'
-              }`}
-            >
-              {inquirySent ? (
-                <><CheckCircle2 size={13} />문의가 전송되었습니다</>
-              ) : (
-                <><AlertCircle size={13} />교수님께 바로 연락하기</>
-              )}
-            </button>
+              </>
+            )}
           </div>
 
           {/* Input */}
