@@ -10,10 +10,37 @@ const QUICK_QUESTIONS = [
   '형식 점수 기준은?',
 ]
 
-function now() {
-  return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+function nowISO() { return new Date().toISOString() }
+function isoToDisplay(iso: string) {
+  return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+}
+// SQLite datetime('now') → ISO UTC 변환
+function dbToISO(s: string) {
+  return s.includes('T') ? s : s.replace(' ', 'T') + 'Z'
 }
 
+const STORAGE_KEY = (userId: string) => `gradelens_chat_${userId}`
+const MAX_STORED = 100 // 최대 저장 메시지 수
+
+function loadMessages(userId: string, greeting: ChatMessage): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY(userId))
+    if (!raw) return [greeting]
+    const parsed: ChatMessage[] = JSON.parse(raw)
+    if (!Array.isArray(parsed) || parsed.length === 0) return [greeting]
+    return parsed
+  } catch {
+    return [greeting]
+  }
+}
+
+function saveMessages(userId: string, msgs: ChatMessage[]) {
+  try {
+    // 최신 MAX_STORED개만 유지
+    const toSave = msgs.slice(-MAX_STORED)
+    localStorage.setItem(STORAGE_KEY(userId), JSON.stringify(toSave))
+  } catch {}
+}
 
 // ── 메시지 버블 ───────────────────────────────────────────────────────────────
 function MessageBubble({ m }: { m: ChatMessage }) {
@@ -33,7 +60,6 @@ function MessageBubble({ m }: { m: ChatMessage }) {
       </div>
     )
   }
-
   if (m.role === 'bot') {
     return (
       <div className="flex justify-start">
@@ -47,8 +73,6 @@ function MessageBubble({ m }: { m: ChatMessage }) {
       </div>
     )
   }
-
-  // user
   return (
     <div className="flex justify-end">
       <div className="max-w-[80%] bg-indigo-600 text-white rounded-tl-2xl rounded-tr-sm rounded-br-2xl rounded-bl-2xl px-3 py-2 text-xs leading-relaxed">
@@ -65,31 +89,45 @@ export default function ChatBot({
   forceOpen,
   onForceOpenHandled,
 }: {
-  user: { name: string }
+  user: { id: string; name: string }
   forceOpen?: boolean
   onForceOpenHandled?: () => void
 }) {
+  const greeting: ChatMessage = {
+    role: 'bot',
+    text: `안녕하세요 ${user.name} 님! 저는 AI 채점 어시스턴트입니다.\n\n점수나 피드백에 대해 궁금한 점이 있으시면 편하게 질문해 주세요. 채점 기준에 근거하여 자세히 설명드리겠습니다.`,
+    timestamp: isoToDisplay(nowISO()),
+    createdAt: nowISO(),
+  }
+
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    {
-      role: 'bot',
-      text: `안녕하세요 ${user.name} 님! 저는 AI 채점 어시스턴트입니다.\n\n점수나 피드백에 대해 궁금한 점이 있으시면 편하게 질문해 주세요. 채점 기준에 근거하여 자세히 설명드리겠습니다.`,
-      timestamp: now(),
-    },
-  ])
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    loadMessages(user.id, greeting)
+  )
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
   const [showInquiry, setShowInquiry] = useState(false)
   const [inquiryLoading, setInquiryLoading] = useState(false)
   const [inquirySent, setInquirySent] = useState(false)
   const [inquiryMsg, setInquiryMsg] = useState('')
-  // 교수 답변 알림 미확인 수 (FAB 배지)
   const [profUnread, setProfUnread] = useState(0)
-  // 이미 챗봇에 삽입한 알림 id 집합 (중복 방지)
   const shownNotifIds = useRef<Set<string>>(new Set())
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // 외부(알림 클릭)에서 챗봇 열기 요청 시 처리
+  // 메시지 변경될 때마다 localStorage에 저장
+  useEffect(() => {
+    saveMessages(user.id, messages)
+  }, [messages, user.id])
+
+  // 마운트 시 이미 저장된 professor_reply notifId 등록 (중복 방지)
+  useEffect(() => {
+    messages.forEach(m => {
+      if (m.notifId) shownNotifIds.current.add(m.notifId)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // 마운트 1회만
+
+  // 외부 알림 클릭 → 챗봇 열기
   useEffect(() => {
     if (forceOpen) {
       setOpen(true)
@@ -98,9 +136,15 @@ export default function ChatBot({
     }
   }, [forceOpen, onForceOpenHandled])
 
+  // 메시지 변경 또는 챗봇 열릴 때 맨 아래로 스크롤
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, typing, showInquiry])
+    if (!open) return
+    // open 직후 DOM이 그려진 뒤 스크롤되도록 requestAnimationFrame 사용
+    const raf = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [messages, typing, showInquiry, open])
 
   // ── 교수 답변 폴링 ────────────────────────────────────────────────────────
   const pollProfReplies = useCallback(async () => {
@@ -109,24 +153,39 @@ export default function ChatBot({
       if (!res.ok) return
       const data = await res.json()
       const notifs: {
-        id: string; type: string; title: string; body: string; is_read: number; created_at: string
+        id: string; type: string; body: string; is_read: number; created_at: string
       }[] = data.notifications ?? []
 
-      const replies = notifs.filter(n => n.type === 'professor_reply')
-      const newReplies = replies.filter(n => !shownNotifIds.current.has(n.id))
+      const newReplies = notifs
+        .filter(n => n.type === 'professor_reply' && !shownNotifIds.current.has(n.id))
 
-      if (newReplies.length > 0) {
-        const profMsgs: ChatMessage[] = newReplies.map(n => ({
+      if (newReplies.length === 0) return
+
+      const profMsgs: ChatMessage[] = newReplies.map(n => {
+        const iso = dbToISO(n.created_at)
+        return {
           role: 'professor' as const,
           text: n.body,
-          timestamp: new Date(n.created_at.replace(' ', 'T') + 'Z').toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+          timestamp: isoToDisplay(iso),
+          createdAt: iso,
           notifId: n.id,
-        }))
-        setMessages(prev => [...prev, ...profMsgs])
-        newReplies.forEach(n => shownNotifIds.current.add(n.id))
-        // 챗봇이 닫혀 있으면 배지 카운트 증가
-        setProfUnread(prev => prev + newReplies.length)
-      }
+        }
+      })
+
+      newReplies.forEach(n => shownNotifIds.current.add(n.id))
+
+      // 기존 메시지 + 새 교수 답변을 createdAt 기준으로 정렬
+      setMessages(prev => {
+        const merged = [...prev, ...profMsgs]
+        merged.sort((a, b) => {
+          const ta = a.createdAt ?? ''
+          const tb = b.createdAt ?? ''
+          return ta.localeCompare(tb)
+        })
+        return merged
+      })
+
+      setProfUnread(prev => prev + newReplies.length)
     } catch {}
   }, [])
 
@@ -136,7 +195,6 @@ export default function ChatBot({
     return () => clearInterval(id)
   }, [pollProfReplies])
 
-  // 챗봇 열릴 때 배지 초기화
   const handleOpen = () => {
     setOpen(o => !o)
     setProfUnread(0)
@@ -145,7 +203,13 @@ export default function ChatBot({
   // ── AI 채팅 전송 ──────────────────────────────────────────────────────────
   const send = async (text: string = input) => {
     if (!text.trim() || typing) return
-    const userMsg: ChatMessage = { role: 'user', text: text.trim(), timestamp: now() }
+    const iso = nowISO()
+    const userMsg: ChatMessage = {
+      role: 'user',
+      text: text.trim(),
+      timestamp: isoToDisplay(iso),
+      createdAt: iso,
+    }
     const currentHistory = [...messages]
     setMessages(m => [...m, userMsg])
     setInput('')
@@ -158,16 +222,20 @@ export default function ChatBot({
         body: JSON.stringify({ message: text.trim(), history: currentHistory }),
       })
       const data = await res.json()
+      const replyIso = nowISO()
       setMessages(m => [...m, {
         role: 'bot',
         text: data.reply ?? '죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 질문해 주세요.',
-        timestamp: now(),
+        timestamp: isoToDisplay(replyIso),
+        createdAt: replyIso,
       }])
     } catch {
+      const errIso = nowISO()
       setMessages(m => [...m, {
         role: 'bot',
         text: '네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
-        timestamp: now(),
+        timestamp: isoToDisplay(errIso),
+        createdAt: errIso,
       }])
     } finally {
       setTyping(false)
@@ -186,17 +254,21 @@ export default function ChatBot({
       setInquirySent(true)
       setShowInquiry(false)
       setInquiryMsg('')
+      const iso = nowISO()
       setMessages(m => [...m, {
         role: 'bot',
         text: '✅ 교수님께 문의 알림이 전송되었습니다.\n\n교수님의 알림창에 문의 내용이 표시됩니다. 답변이 도착하면 이 채팅창에 표시됩니다!',
-        timestamp: now(),
+        timestamp: isoToDisplay(iso),
+        createdAt: iso,
       }])
     } catch {
       setShowInquiry(false)
+      const iso = nowISO()
       setMessages(m => [...m, {
         role: 'bot',
         text: '문의 전송 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
-        timestamp: now(),
+        timestamp: isoToDisplay(iso),
+        createdAt: iso,
       }])
     } finally {
       setInquiryLoading(false)
@@ -205,7 +277,6 @@ export default function ChatBot({
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      {/* Chat Window */}
       {open && (
         <div
           className="absolute bottom-16 right-0 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
@@ -229,7 +300,7 @@ export default function ChatBot({
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5 relative">
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5">
             {messages.map((m, i) => (
               <MessageBubble key={m.notifId ?? i} m={m} />
             ))}
@@ -254,7 +325,6 @@ export default function ChatBot({
           {/* Quick Questions + 긴급 문의 영역 */}
           <div className="px-3 pb-2 flex-shrink-0">
             {showInquiry ? (
-              /* ── 인라인 문의 패널 ── */
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-700 text-red-700 flex items-center gap-1">
@@ -294,7 +364,6 @@ export default function ChatBot({
                 </div>
               </div>
             ) : (
-              /* ── 기본: 빠른 질문 + 연락 버튼 ── */
               <>
                 <div className="flex flex-wrap gap-1 mb-2">
                   {QUICK_QUESTIONS.map((q, i) => (
@@ -342,13 +411,12 @@ export default function ChatBot({
       {/* FAB */}
       <button
         onClick={handleOpen}
-        className="w-13 h-13 bg-indigo-600 rounded-full shadow-xl flex items-center justify-center hover:bg-indigo-700 transition-all hover:scale-105 active:scale-95"
+        className="bg-indigo-600 rounded-full shadow-xl flex items-center justify-center hover:bg-indigo-700 transition-all hover:scale-105 active:scale-95"
         style={{ width: 52, height: 52 }}
       >
         {open ? <X size={22} className="text-white" /> : <MessageCircle size={22} className="text-white" />}
       </button>
 
-      {/* 배지: 교수 답변 미확인 or AI 표시 */}
       {!open && (
         <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center ${
           profUnread > 0 ? 'bg-amber-500' : 'bg-red-500'

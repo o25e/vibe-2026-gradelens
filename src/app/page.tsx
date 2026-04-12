@@ -1187,7 +1187,7 @@ export default function Dashboard() {
       </div>
       {view === 'student' && (
         <ChatBot
-          user={user}
+          user={{ id: user.id, name: user.name }}
           forceOpen={chatBotOpen}
           onForceOpenHandled={() => setChatBotOpen(false)}
         />

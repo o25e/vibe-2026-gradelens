@@ -41,7 +41,8 @@ export interface Assignment {
 export interface ChatMessage {
   role: 'bot' | 'user' | 'professor'
   text: string
-  timestamp: string
+  timestamp: string   // 표시용 포맷 문자열
+  createdAt?: string  // 정렬·저장용 ISO 문자열
   notifId?: string
 }
 
