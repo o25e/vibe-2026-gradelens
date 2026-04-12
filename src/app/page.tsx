@@ -300,9 +300,10 @@ function AssignmentCard({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2 ml-4" onClick={e => e.stopPropagation()}>
+      <div className="flex items-center gap-2 ml-4">
         <button
-          onClick={() => {
+          onClick={e => {
+            e.stopPropagation()
             if (confirm(`"${a.title}" 과제를 삭제할까요?\n모든 제출물과 성적도 함께 삭제됩니다.`)) {
               fetch(`/api/assignments/${a.id}`, { method: 'DELETE' })
                 .then(r => r.ok && onDeleted())

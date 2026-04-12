@@ -42,6 +42,47 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     (grade.confirmed_score as number | null) ??
     (grade.ai_score as number | null)
 
+  // ── 루브릭 카테고리 기반 radar_scores 재산출 ──────────────────────────────
+  let updatedRadarScores: Record<string, number> | null = null
+  if (effectiveRubrics && effectiveRubrics.length > 0) {
+    // 과제의 루브릭 항목에서 카테고리 정보 조회
+    const rubricItems = db
+      .prepare('SELECT text, category FROM rubric_items WHERE assignment_id = ?')
+      .all(grade.assignment_id as string) as { text: string; category: string }[]
+
+    const categoryMap = new Map(rubricItems.map(r => [r.text, r.category]))
+
+    // 카테고리별 점수 합산
+    const catTotals: Record<string, { score: number; max: number }> = {}
+    for (const r of effectiveRubrics) {
+      const cat = categoryMap.get(r.rubric_text) ?? 'logic'
+      if (!catTotals[cat]) catTotals[cat] = { score: 0, max: 0 }
+      catTotals[cat].score += r.score
+      catTotals[cat].max += r.max_pts
+    }
+
+    // 카테고리 → 레이더 축 매핑
+    const axisMap: Record<string, string> = {
+      logic: '논리력',
+      reference: '자료활용도',
+      readability: '가독성',
+      structure: '창의성',
+      format: '형식준수',
+    }
+
+    // 기존 AI radar_scores를 기본값으로 사용, 카테고리가 있는 축만 덮어씀
+    const existing: Record<string, number> = grade.radar_scores
+      ? JSON.parse(grade.radar_scores as string)
+      : { 논리력: 70, 자료활용도: 70, 가독성: 70, 창의성: 70, 형식준수: 70 }
+
+    updatedRadarScores = { ...existing }
+    for (const [cat, radarKey] of Object.entries(axisMap)) {
+      if (catTotals[cat] && catTotals[cat].max > 0) {
+        updatedRadarScores[radarKey] = Math.round(catTotals[cat].score / catTotals[cat].max * 100)
+      }
+    }
+  }
+
   if (rubric_scores || confirmed_score != null || feedback_short != null) {
     const totalMax = effectiveRubrics?.reduce((a, r) => a + r.max_pts, 0) ?? 100
     const highItems = (effectiveRubrics ?? [])
@@ -62,7 +103,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       (effectiveFeedback ? ` ${effectiveFeedback}` : '')
   }
 
-  // 점수/피드백/루브릭/상태/section1_summary 업데이트
+  // 점수/피드백/루브릭/상태/section1_summary/radar_scores 업데이트
   db.prepare(`
     UPDATE grades
     SET confirmed_score  = COALESCE(?, confirmed_score),
@@ -70,6 +111,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         status           = COALESCE(?, status),
         rubric_scores    = COALESCE(?, rubric_scores),
         section1_summary = COALESCE(?, section1_summary),
+        radar_scores     = COALESCE(?, radar_scores),
         confirmed_at     = datetime('now')
     WHERE id = ?
   `).run(
@@ -77,7 +119,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     feedback_short ?? null,
     status ?? null,
     rubric_scores ? JSON.stringify(rubric_scores) : null,
-    updatedSection1,   // null이면 COALESCE가 기존 값 유지
+    updatedSection1,
+    updatedRadarScores ? JSON.stringify(updatedRadarScores) : null,
     params.id,
   )
 
