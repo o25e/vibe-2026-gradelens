@@ -6,8 +6,8 @@ import { getSession } from '@/lib/session'
 // GET /api/grade-settings?assignment_id=xxx — fetch saved cutoffs for an assignment
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
-  if (!session || session.role !== 'instructor') {
-    return NextResponse.json({ error: 'Instructor only' }, { status: 403 })
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const { searchParams } = new URL(req.url)

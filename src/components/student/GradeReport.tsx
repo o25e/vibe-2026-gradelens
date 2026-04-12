@@ -9,6 +9,20 @@ import type { AuthUser } from '@/lib/auth'
 interface RubricScore { rubric_text: string; max_pts: number; score: number; reason: string }
 interface Section2Item { action: string; impact: string; category: string }
 interface RadarScores { 논리력: number; 자료활용도: number; 가독성: number; 창의성: number; 형식준수: number }
+interface GradeCuts { 'A+': number; A: number; 'B+': number; B: number; 'C+': number; C: number }
+
+const DEFAULT_CUTS: GradeCuts = { 'A+': 93, A: 87, 'B+': 80, B: 73, 'C+': 65, C: 58 }
+
+function computeGrade(score: number, cuts: GradeCuts): string {
+  if (score >= cuts['A+']) return 'A+'
+  if (score >= cuts.A)    return 'A'
+  if (score >= cuts['B+']) return 'B+'
+  if (score >= cuts.B)    return 'B'
+  if (score >= cuts['C+']) return 'C+'
+  if (score >= cuts.C)    return 'C'
+  if (score >= 50)        return 'D'
+  return 'F'
+}
 
 interface Submission {
   id: string
@@ -52,6 +66,7 @@ export default function GradeReport({
   onBack?: () => void
 }) {
   const [submission, setSubmission] = useState<Submission | null>(null)
+  const [cuts, setCuts] = useState<GradeCuts>(DEFAULT_CUTS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,13 +78,23 @@ export default function GradeReport({
       const data = await res.json()
       const list: Submission[] = data.submissions ?? []
 
+      let found: Submission | null = null
       if (assignmentId) {
-        // 특정 과제 제출 찾기
-        const found = list.find(s => s.assignment_id === assignmentId) ?? null
-        setSubmission(found)
+        found = list.find(s => s.assignment_id === assignmentId) ?? null
       } else {
-        // 최신 제출 (기존 동작)
-        setSubmission(list.length > 0 ? list[0] : null)
+        found = list.length > 0 ? list[0] : null
+      }
+      setSubmission(found)
+
+      // 해당 과제의 등급 컷오프 설정 불러오기
+      const targetAssignmentId = assignmentId ?? found?.assignment_id
+      if (targetAssignmentId) {
+        const settingsRes = await fetch(`/api/grade-settings?assignment_id=${targetAssignmentId}`, { cache: 'no-store' })
+        if (settingsRes.ok) {
+          const { cuts: savedCuts } = await settingsRes.json()
+          if (savedCuts) setCuts(savedCuts)
+          else setCuts(DEFAULT_CUTS)
+        }
       }
     } catch {
       setError('데이터를 불러오는 중 오류가 발생했습니다.')
@@ -187,9 +212,7 @@ export default function GradeReport({
   const isConfirmed = submission.confirmed_score !== null
   const totalPts = submission.rubric_scores?.reduce((a, r) => a + r.max_pts, 0) ?? 100
 
-  const gradeLabel =
-    score >= 95 ? 'A+' : score >= 90 ? 'A' : score >= 85 ? 'B+' :
-    score >= 80 ? 'B' : score >= 75 ? 'C+' : score >= 70 ? 'C' : 'D'
+  const gradeLabel = computeGrade(score, cuts)
   const gradeVariant = gradeLabel.startsWith('A') ? 'success' : gradeLabel.startsWith('B') ? 'info' : 'warning'
 
   const radar = submission.radar_scores
