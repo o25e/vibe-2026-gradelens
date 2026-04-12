@@ -22,15 +22,14 @@ const categoryColors: Record<string, string> = {
 
 interface Props {
   onPublished?: (assignmentId: string) => void
+  defaultCourse?: string
 }
 
-export default function RubricBuilder({ onPublished }: Props) {
+export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
   const [rubrics, setRubrics] = useState<RubricItem[]>(INITIAL_RUBRICS)
-  const [title, setTitle] = useState('2024-2 AI 윤리학 최종 보고서')
-  const [description, setDescription] = useState(
-    'AI 기술 발전에 따른 사회적·윤리적 쟁점을 분석하고, 학습자 본인의 비판적 관점을 논리적으로 서술하시오. A4 5매 이상, 참고 문헌 10개 이상 필수.'
-  )
-  const [course, setCourse] = useState('AI 윤리학 (CS4892)')
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [course, setCourse] = useState(defaultCourse ?? '')
   const [deadline, setDeadline] = useState('2026-06-30T23:59')
   const [newText, setNewText] = useState('')
   const [newPts, setNewPts] = useState('')

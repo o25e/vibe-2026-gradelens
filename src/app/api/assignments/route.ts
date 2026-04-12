@@ -16,8 +16,15 @@ export async function GET(req: NextRequest) {
       .prepare('SELECT * FROM assignments WHERE instructor_id = ? ORDER BY created_at DESC')
       .all(session.id)
   } else {
+    // 학생: 교수 이름도 함께 조회
     rows = db
-      .prepare('SELECT * FROM assignments WHERE is_active = 1 ORDER BY created_at DESC')
+      .prepare(`
+        SELECT a.*, u.name AS instructor_name
+        FROM assignments a
+        JOIN users u ON a.instructor_id = u.id
+        WHERE a.is_active = 1
+        ORDER BY a.created_at DESC
+      `)
       .all()
   }
 

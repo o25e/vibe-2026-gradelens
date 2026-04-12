@@ -21,10 +21,10 @@ import { Avatar, Badge, Button, Card } from '@/components/ui'
 import type { Student } from '@/lib/mockData'
 
 type ViewMode = 'instructor' | 'student'
-type InstructorSection = 'grading' | 'inquiries' | 'stats' | 'students' | 'settings'
+type InstructorSection = 'courses' | 'inquiries' | 'stats' | 'students' | 'settings'
 type StudentSection = 'assignments'
-// 학생 서브뷰: 목록 / 제출 폼 / 성적 리포트
-type StudentView = 'list' | 'submit' | 'report'
+// 학생 서브뷰: 과목 목록 / 과제 목록 / 제출 폼 / 성적 리포트
+type StudentView = 'courses' | 'list' | 'submit' | 'report'
 type InstructorGradingView = 'list' | 'detail' | 'create'
 
 interface AssignmentItem {
@@ -34,6 +34,7 @@ interface AssignmentItem {
   deadline: string
   created_at: string
   is_active: number
+  instructor_name?: string   // 학생 모드: 담당 교수 이름
   // 교수 모드 전용: API가 반환하는 제출 현황 카운트
   sub_total?: number
   sub_published?: number
@@ -59,14 +60,14 @@ interface SubmissionSummary {
 }
 
 const INSTRUCTOR_NAV: { id: InstructorSection; label: string; icon: React.ReactNode; sub?: string }[] = [
-  { id: 'grading', label: 'AI 채점 관리', icon: <ClipboardList size={16} />, sub: '과제 · 루브릭 · 검토' },
+  { id: 'courses', label: '나의 강의', icon: <BookOpen size={16} />, sub: '강의별 과제 · 채점 관리' },
   { id: 'inquiries', label: '학생 긴급 문의', icon: <MessageSquare size={16} /> },
   { id: 'stats', label: '성적 통계', icon: <BarChart3 size={16} /> },
   { id: 'students', label: '수강생 관리', icon: <Users size={16} /> },
   { id: 'settings', label: '시스템 설정', icon: <Settings size={16} /> },
 ]
 const STUDENT_NAV: { id: StudentSection; label: string; icon: React.ReactNode }[] = [
-  { id: 'assignments', label: '과제 목록', icon: <BookOpen size={16} /> },
+  { id: 'assignments', label: '나의 과목', icon: <BookOpen size={16} /> },
 ]
 
 // ── Notification Bell ────────────────────────────────────────────────────────
@@ -326,19 +327,22 @@ function InstructorAssignmentList({
   onSelect,
   onCreateNew,
   onDeleted,
+  courseFilter,
 }: {
   assignments: AssignmentItem[]
   onSelect: (assignment: AssignmentItem) => void
   onCreateNew: () => void
   onDeleted: () => void
+  courseFilter?: string
 }) {
+  const filtered = courseFilter ? assignments.filter(a => a.course === courseFilter) : assignments
   // 검토 대기: 미완료 과제 (제출 없음 포함)
-  const pending = assignments.filter(a => !isCompleted(a))
+  const pending = filtered.filter(a => !isCompleted(a))
   // 완료: 전체 공지 처리된 과제
-  const completed = assignments.filter(a => isCompleted(a))
+  const completed = filtered.filter(a => isCompleted(a))
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 w-full">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-700 text-slate-800">과제 목록</h2>
@@ -352,10 +356,10 @@ function InstructorAssignmentList({
         </button>
       </div>
 
-      {assignments.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-3">
           <ClipboardList size={36} className="opacity-30" />
-          <p className="text-sm">등록된 과제가 없습니다.</p>
+          <p className="text-sm">{courseFilter ? '이 강의에 등록된 과제가 없습니다.' : '등록된 과제가 없습니다.'}</p>
           <button onClick={onCreateNew} className="text-sm text-indigo-600 hover:underline">
             첫 번째 과제 만들기 →
           </button>
@@ -424,8 +428,12 @@ type SubmissionStatus = 'none' | 'waiting' | 'published'
 // ── Student Assignment List (제출 현황 포함) ────────────────────────────────
 function StudentAssignmentList({
   onSelect,
+  course,
+  onBack,
 }: {
   onSelect: (assignment: AssignmentItem, status: SubmissionStatus) => void
+  course: string
+  onBack: () => void
 }) {
   const [assignments, setAssignments] = useState<AssignmentItem[]>([])
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([])
@@ -462,12 +470,23 @@ function StudentAssignmentList({
     )
   }
 
-  if (assignments.length === 0) {
+  // 현재 과목의 과제만 필터링
+  const filtered = assignments.filter(a => a.course === course)
+
+  if (!loading && filtered.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
-        <BookOpen size={36} className="opacity-30" />
-        <p className="text-sm">현재 등록된 과제가 없습니다.</p>
-        <p className="text-xs">교수님이 과제를 게시하면 여기에 표시됩니다.</p>
+      <div className="space-y-4 w-full">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
+        >
+          <ChevronLeft size={15} /> 과목 목록으로
+        </button>
+        <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
+          <BookOpen size={36} className="opacity-30" />
+          <p className="text-sm">이 과목에 등록된 과제가 없습니다.</p>
+          <p className="text-xs">교수님이 과제를 게시하면 여기에 표시됩니다.</p>
+        </div>
       </div>
     )
   }
@@ -476,11 +495,17 @@ function StudentAssignmentList({
   const subMap = new Map(submissions.map(s => [s.assignment_id, s]))
 
   return (
-    <div className="space-y-4 max-w-3xl mx-auto">
+    <div className="space-y-4 w-full">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
+      >
+        <ChevronLeft size={15} /> 과목 목록으로
+      </button>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-700 text-slate-800">과제 목록</h2>
-          <p className="text-xs text-slate-400">과제를 클릭하면 제출 또는 성적 리포트로 이동합니다</p>
+          <p className="text-xs text-slate-400">{course} · 과제를 클릭하면 제출 또는 성적 리포트로 이동합니다</p>
         </div>
         <Button variant="ghost" size="sm" onClick={fetchData}>
           <RefreshCw size={13} /> 새로고침
@@ -488,7 +513,7 @@ function StudentAssignmentList({
       </div>
 
       <div className="space-y-3">
-        {assignments.map((a, idx) => {
+        {filtered.map((a, idx) => {
           const sub = subMap.get(a.id)
           const deadline = new Date(a.deadline)
           const now = new Date()
@@ -558,6 +583,365 @@ function StudentAssignmentList({
             </Card>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// ── Student Course Side Panel ─────────────────────────────────────────────────
+function StudentCourseSidePanel({
+  selectedCourse,
+  onSelectCourse,
+}: {
+  selectedCourse: string | null
+  onSelectCourse: (course: string) => void
+}) {
+  const [courseData, setCourseData] = useState<{
+    course: string
+    instructorName: string
+    total: number
+    remaining: number
+  }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [aRes, sRes] = await Promise.all([
+        fetch('/api/assignments', { cache: 'no-store' }),
+        fetch('/api/submissions', { cache: 'no-store' }),
+      ])
+      const aData = await aRes.json()
+      const sData = await sRes.json()
+      const assignments: AssignmentItem[] = aData.assignments ?? []
+      const submissions: SubmissionSummary[] = sData.submissions ?? []
+
+      const subMap = new Map(submissions.map(s => [s.assignment_id, s]))
+      const now = new Date()
+
+      const courseMap = new Map<string, { instructorName: string; total: number; remaining: number }>()
+      for (const a of assignments) {
+        if (!courseMap.has(a.course)) {
+          courseMap.set(a.course, { instructorName: a.instructor_name ?? '교수', total: 0, remaining: 0 })
+        }
+        const entry = courseMap.get(a.course)!
+        entry.total++
+        if (!subMap.has(a.id) && new Date(a.deadline) > now) entry.remaining++
+      }
+      setCourseData(Array.from(courseMap.entries()).map(([course, d]) => ({ course, ...d })))
+    } catch {} finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  return (
+    <aside className="w-52 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 overflow-y-auto">
+      {/* 헤더 */}
+      <div className="px-4 pt-5 pb-3 border-b border-slate-100 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 bg-violet-100 rounded-md flex items-center justify-center">
+            <BookOpen size={11} className="text-violet-600" />
+          </div>
+          <span className="text-xs font-700 text-slate-700">나의 과목</span>
+        </div>
+        <div className="text-[11px] text-slate-400 mt-1 pl-0.5">2026년 1학기</div>
+      </div>
+
+      {/* 과목 목록 */}
+      <div className="flex-1 py-1.5">
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : courseData.length === 0 ? (
+          <div className="px-4 py-6 text-center">
+            <BookOpen size={18} className="mx-auto mb-2 text-slate-300" />
+            <p className="text-xs text-slate-400">등록된 과목이 없습니다</p>
+          </div>
+        ) : courseData.map(({ course, instructorName, remaining }) => {
+          const isSelected = course === selectedCourse
+          return (
+            <button
+              key={course}
+              onClick={() => onSelectCourse(course)}
+              className={`w-full text-left px-3 py-2.5 transition-all duration-150 group relative border-l-2 ${
+                isSelected
+                  ? 'bg-violet-50 border-violet-500'
+                  : 'border-transparent hover:bg-slate-50 hover:border-slate-200'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <div className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                  isSelected ? 'bg-violet-100' : 'bg-slate-100 group-hover:bg-violet-50'
+                }`}>
+                  <BookOpen size={11} className={isSelected ? 'text-violet-600' : 'text-slate-400 group-hover:text-violet-400'} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className={`text-[11px] font-700 leading-tight truncate ${isSelected ? 'text-violet-700' : 'text-slate-700'}`}>
+                    {course}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                    2026년 1학기
+                  </div>
+                  <div className="text-[10px] text-slate-400 leading-tight">
+                    {instructorName} 교수
+                  </div>
+                  {remaining > 0 && (
+                    <span className="mt-1 inline-flex items-center text-[9px] font-700 bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded-full">
+                      미제출 {remaining}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </aside>
+  )
+}
+
+// ── Student Course List (full-page, LMS style) ────────────────────────────────
+function StudentCourseList({
+  onSelectCourse,
+}: {
+  onSelectCourse: (course: string) => void
+}) {
+  const [assignments, setAssignments] = useState<AssignmentItem[]>([])
+  const [submissions, setSubmissions] = useState<SubmissionSummary[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [aRes, sRes] = await Promise.all([
+        fetch('/api/assignments', { cache: 'no-store' }),
+        fetch('/api/submissions', { cache: 'no-store' }),
+      ])
+      const aData = await aRes.json()
+      const sData = await sRes.json()
+      setAssignments(aData.assignments ?? [])
+      setSubmissions(sData.submissions ?? [])
+    } catch {} finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="flex flex-col items-center gap-3 text-slate-400">
+          <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm">과목 불러오는 중...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // 과목별 그룹화
+  type CourseEntry = { instructorName: string; total: number; remaining: number; submitted: number; published: number }
+  const courseMap = new Map<string, CourseEntry>()
+  const subMap = new Map(submissions.map(s => [s.assignment_id, s]))
+  const now = new Date()
+
+  for (const a of assignments) {
+    if (!courseMap.has(a.course)) {
+      courseMap.set(a.course, { instructorName: a.instructor_name ?? '교수', total: 0, remaining: 0, submitted: 0, published: 0 })
+    }
+    const e = courseMap.get(a.course)!
+    e.total++
+    const sub = subMap.get(a.id)
+    if (sub) {
+      e.submitted++
+      if (sub.grade_status !== 'waiting' && sub.ai_score !== null) e.published++
+    } else if (new Date(a.deadline) > now) {
+      e.remaining++
+    }
+  }
+
+  if (courseMap.size === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
+        <BookOpen size={36} className="opacity-30" />
+        <p className="text-sm">현재 등록된 과목이 없습니다.</p>
+        <p className="text-xs">교수님이 과제를 게시하면 여기에 표시됩니다.</p>
+      </div>
+    )
+  }
+
+  const courses = Array.from(courseMap.entries())
+
+  return (
+    <div className="w-full space-y-0">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-700 text-slate-700">
+          나의 과목
+          <span className="ml-2 text-indigo-600 font-800">{courses.length}</span>
+        </h2>
+        <Button variant="ghost" size="sm" onClick={fetchData}>
+          <RefreshCw size={13} /> 새로고침
+        </Button>
+      </div>
+
+      {/* 과목 목록 */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+        {courses.map(([course, { instructorName, total, remaining, submitted, published }]) => (
+          <div
+            key={course}
+            className="flex items-center gap-5 px-6 py-5 hover:bg-slate-50 transition-colors group cursor-pointer"
+            onClick={() => onSelectCourse(course)}
+          >
+            {/* 아이콘 */}
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-100 transition-colors">
+              <BookOpen size={16} className="text-indigo-500" />
+            </div>
+
+            {/* 과목 정보 */}
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-700 text-slate-800 truncate">{course}</div>
+              <div className="text-xs text-slate-400 mt-0.5">
+                2026년 1학기
+                <span className="mx-1.5 text-slate-200">|</span>
+                {instructorName} 교수
+              </div>
+            </div>
+
+            {/* 통계 */}
+            <div className="flex items-center gap-8 flex-shrink-0">
+              {[
+                { label: '과제', value: total, color: 'text-slate-700' },
+                { label: '미제출', value: remaining, color: remaining > 0 ? 'text-amber-500' : 'text-slate-400' },
+                { label: '제출완료', value: submitted, color: submitted > 0 ? 'text-indigo-500' : 'text-slate-400' },
+                { label: '성적공개', value: published, color: published > 0 ? 'text-emerald-500' : 'text-slate-400' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="text-center w-14">
+                  <div className={`text-base font-700 ${color}`}>{value}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 바로가기 버튼 */}
+            <button
+              className="ml-4 flex items-center gap-1.5 text-sm font-600 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-colors flex-shrink-0"
+              onClick={e => { e.stopPropagation(); onSelectCourse(course) }}
+            >
+              과목 바로가기
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Instructor Course List (full-page, LMS style) ─────────────────────────────
+function InstructorCourseListPage({
+  assignments,
+  onSelectCourse,
+  onCreateNew,
+}: {
+  assignments: AssignmentItem[]
+  onSelectCourse: (course: string) => void
+  onCreateNew: () => void
+}) {
+  type CourseEntry = { total: number; subTotal: number; subPublished: number; pendingReview: number }
+  const courseMap = new Map<string, CourseEntry>()
+
+  for (const a of assignments) {
+    if (!courseMap.has(a.course)) {
+      courseMap.set(a.course, { total: 0, subTotal: 0, subPublished: 0, pendingReview: 0 })
+    }
+    const e = courseMap.get(a.course)!
+    e.total++
+    e.subTotal += a.sub_total ?? 0
+    e.subPublished += a.sub_published ?? 0
+    const sub = a.sub_total ?? 0
+    const pub = a.sub_published ?? 0
+    if (sub > 0 && sub !== pub) e.pendingReview++
+  }
+
+  const courses = Array.from(courseMap.entries())
+
+  if (courses.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4 text-slate-400 w-full">
+        <BookOpen size={36} className="opacity-30" />
+        <p className="text-sm">등록된 강의가 없습니다.</p>
+        <button
+          onClick={onCreateNew}
+          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-600 rounded-xl hover:bg-indigo-700 transition-colors"
+        >
+          <Plus size={14} /> 첫 번째 과제 만들기
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full space-y-0">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-700 text-slate-800">나의 강의</h2>
+          <p className="text-xs text-slate-400">강의를 선택하여 과제를 관리하세요</p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+        {courses.map(([course, { total, subTotal, subPublished, pendingReview }]) => (
+          <div
+            key={course}
+            className="flex items-center gap-5 px-6 py-5 hover:bg-slate-50 transition-colors group cursor-pointer"
+            onClick={() => onSelectCourse(course)}
+          >
+            {/* 아이콘 */}
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-100 transition-colors">
+              <BookOpen size={16} className="text-indigo-500" />
+            </div>
+
+            {/* 강의 정보 */}
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-700 text-slate-800 truncate">{course}</div>
+              <div className="text-xs text-slate-400 mt-0.5">
+                2026년 1학기
+                {pendingReview > 0 && (
+                  <span className="ml-2 inline-flex items-center text-[10px] font-700 bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded-full">
+                    검토 대기 {pendingReview}건
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 통계 */}
+            <div className="flex items-center gap-8 flex-shrink-0">
+              {[
+                { label: '과제', value: total, color: 'text-slate-700' },
+                { label: '제출', value: subTotal, color: subTotal > 0 ? 'text-indigo-500' : 'text-slate-400' },
+                { label: '성적공개', value: subPublished, color: subPublished > 0 ? 'text-emerald-500' : 'text-slate-400' },
+                { label: '검토대기', value: pendingReview, color: pendingReview > 0 ? 'text-amber-500' : 'text-slate-400' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="text-center w-14">
+                  <div className={`text-base font-700 ${color}`}>{value}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 바로가기 버튼 */}
+            <button
+              className="ml-4 flex items-center gap-1.5 text-sm font-600 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-colors flex-shrink-0"
+              onClick={e => { e.stopPropagation(); onSelectCourse(course) }}
+            >
+              강의 바로가기
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -656,7 +1040,7 @@ function DashboardInfoBar({
       <div className="w-px h-7 bg-slate-100" />
       <div>
         <div className="text-xs text-slate-400 leading-none mb-0.5">과목명</div>
-        <div className="text-sm font-700 text-indigo-700 leading-none">{courseName}</div>
+        <div className="text-sm font-700 text-indigo-700 leading-none">{courseName || '—'}</div>
       </div>
     </>
   )
@@ -762,8 +1146,6 @@ function Sidebar({
   students: Student[]; user: AuthUser; onLogout: () => void; courseName: string
   inquiryUnread: number
 }) {
-  const pendingCount = students.filter(s => s.status === 'pending').length
-
   return (
     <aside className="w-56 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 min-h-screen">
       <div className="px-4 pt-5 pb-4 border-b border-slate-100">
@@ -802,8 +1184,7 @@ function Sidebar({
                 active={instructorSection === item.id}
                 onClick={() => setInstructorSection(item.id)}
                 badge={
-                  item.id === 'grading' && pendingCount > 0 ? String(pendingCount)
-                  : item.id === 'inquiries' && inquiryUnread > 0 ? String(inquiryUnread)
+                  item.id === 'inquiries' && inquiryUnread > 0 ? String(inquiryUnread)
                   : undefined
                 }
               />
@@ -821,19 +1202,29 @@ function Sidebar({
       </div>
 
       <div className="px-3 pb-3">
-        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
-          <div className="text-xs font-700 text-indigo-700 mb-1">현재 과목</div>
-          <div className="text-xs text-indigo-600 leading-snug font-500">{courseName}</div>
-          <div className="text-xs text-indigo-400 mt-1">
-            {students.filter(s => s.status === 'confirmed').length}/{students.length}명 완료
+        {view === 'instructor' ? (
+          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
+            <div className="text-xs font-700 text-indigo-700 mb-1">현재 과목</div>
+            <div className="text-xs text-indigo-600 leading-snug font-500">{courseName}</div>
+            <div className="text-xs text-indigo-400 mt-1">
+              {students.filter(s => s.status === 'confirmed').length}/{students.length}명 완료
+            </div>
+            <div className="mt-2 bg-indigo-200 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="h-full bg-indigo-600 rounded-full transition-all duration-500"
+                style={{ width: `${students.length ? Math.round(students.filter(s => s.status === 'confirmed').length / students.length * 100) : 0}%` }}
+              />
+            </div>
           </div>
-          <div className="mt-2 bg-indigo-200 rounded-full h-1.5 overflow-hidden">
-            <div
-              className="h-full bg-indigo-600 rounded-full transition-all duration-500"
-              style={{ width: `${students.length ? Math.round(students.filter(s => s.status === 'confirmed').length / students.length * 100) : 0}%` }}
-            />
+        ) : (
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3">
+            <div className="text-xs font-700 text-violet-700 mb-1">선택된 과목</div>
+            <div className="text-xs text-violet-600 leading-snug font-500">
+              {courseName || '과목을 선택하세요'}
+            </div>
+            <div className="text-xs text-violet-400 mt-1">2026년 1학기</div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="px-3 pb-4 border-t border-slate-100 pt-3 space-y-1">
@@ -873,23 +1264,26 @@ function Topbar({
   onOpenChatBot?: () => void
 }) {
   const titles: Record<string, string> = {
-    grading: 'AI 채점 관리', stats: '성적 통계', students: '수강생 관리',
-    settings: '시스템 설정', assignments: '과제 목록',
+    courses: '나의 강의', stats: '성적 통계', students: '수강생 관리',
+    settings: '시스템 설정', assignments: '나의 과목',
   }
   const subByView: Record<StudentView, string> = {
+    courses: '왼쪽 패널에서 수강 과목을 선택하세요',
     list: '과제를 클릭하면 제출하거나 성적 리포트를 확인할 수 있습니다',
     submit: '과제 내용을 입력하고 AI 자동 채점을 받아보세요',
     report: '교수님이 공지한 성적 리포트입니다',
   }
   const subs: Record<string, string> = {
-    grading: `${MOCK_ASSIGNMENT.course} · 루브릭 설정 → 학생 제출 → AI 채점 → 교수 확정 후 공지`,
-    assignments: studentView ? subByView[studentView] : subByView.list,
+    courses: '강의를 선택하면 해당 강의의 과제 목록이 표시됩니다',
+    assignments: studentView ? subByView[studentView] : subByView.courses,
   }
 
   const titleOverride = section === 'assignments' && studentView === 'report'
     ? '성적 리포트'
     : section === 'assignments' && studentView === 'submit'
     ? '과제 제출'
+    : section === 'assignments' && studentView === 'courses'
+    ? '수강 과목'
     : undefined
 
   return (
@@ -924,20 +1318,22 @@ export default function Dashboard() {
   const router = useRouter()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [view, setView] = useState<ViewMode>('student')
-  const [instructorSection, setInstructorSection] = useState<InstructorSection>('grading')
+  const [instructorSection, setInstructorSection] = useState<InstructorSection>('courses')
   const [studentSection, setStudentSection] = useState<StudentSection>('assignments')
   const [students] = useState<Student[]>(MOCK_STUDENTS)
 
   // 학생 서브뷰 상태
-  const [studentView, setStudentView] = useState<StudentView>('list')
+  const [studentView, setStudentView] = useState<StudentView>('courses')
+  const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null)
   // 배너 동기화용: 현재 선택된 과제 전체 정보
   const [selectedAssignment, setSelectedAssignment] = useState<AssignmentItem | null>(null)
   // 학생이 이미 제출한 과제 재진입 시 제출 완료 상태로 초기화
   const [studentInitialSubmitted, setStudentInitialSubmitted] = useState(false)
 
+  const [instructorSelectedCourse, setInstructorSelectedCourse] = useState<string | null>(null)
   const [currentAssignmentId, setCurrentAssignmentId] = useState<string | undefined>(undefined)
-  const [courseName, setCourseName] = useState(MOCK_ASSIGNMENT.course)
+  const [courseName, setCourseName] = useState('')
   const [allAssignments, setAllAssignments] = useState<AssignmentItem[]>([])
   const [instructorGradingView, setInstructorGradingView] = useState<InstructorGradingView>('list')
   const [inquiryUnread, setInquiryUnread] = useState(0)
@@ -958,9 +1354,8 @@ export default function Dashboard() {
       .then(data => {
         if (data.assignments) {
           setAllAssignments(data.assignments)
-          if (data.assignments.length > 0) {
-            setCourseName(data.assignments[0].course ?? MOCK_ASSIGNMENT.course)
-          }
+          // 교수 모드: 첫 번째 과제의 과목명을 기본값으로 사용
+          // 학생 모드: selectedCourse로 직접 관리하므로 여기서 덮지 않음
         }
       })
       .catch(() => {})
@@ -1007,10 +1402,39 @@ export default function Dashboard() {
 
   const handleSetInstructorSection = (s: InstructorSection) => {
     setInstructorSection(s)
-    if (s === 'grading') {
+    if (s === 'courses') {
       setInstructorGradingView('list')
       setSelectedAssignment(null)
+      setInstructorSelectedCourse(null)
     }
+  }
+
+  const handleInstructorCourseSelect = (course: string) => {
+    setInstructorSelectedCourse(course)
+    setCourseName(course)
+    setInstructorGradingView('list')
+    setSelectedAssignment(null)
+    setCurrentAssignmentId(undefined)
+  }
+
+  // 학생 — 과목 선택: 해당 과목의 과제 목록으로 이동
+  const handleCourseSelect = (course: string) => {
+    setSelectedCourse(course)
+    setCourseName(course)
+    setStudentView('list')
+    setSelectedAssignmentId(null)
+    setSelectedAssignment(null)
+    setStudentInitialSubmitted(false)
+  }
+
+  // 학생 — 과목 목록으로 돌아가기 (사이드패널에서 과목 선택 해제)
+  const handleStudentBackToCourses = () => {
+    setStudentView('courses')
+    setSelectedCourse(null)
+    setSelectedAssignmentId(null)
+    setSelectedAssignment(null)
+    setStudentInitialSubmitted(false)
+    setCourseName('')
   }
 
   // 학생 — 과제 목록에서 항목 클릭: 전체 과제 정보로 배너 동기화
@@ -1032,7 +1456,7 @@ export default function Dashboard() {
     }
   }
 
-  // 학생 — 목록으로 돌아가기: 배너 및 제출 상태 초기화
+  // 학생 — 과제 목록으로 돌아가기: 배너 및 제출 상태 초기화
   const handleStudentBackToList = () => {
     setStudentView('list')
     setSelectedAssignmentId(null)
@@ -1047,7 +1471,11 @@ export default function Dashboard() {
     setStudentInitialSubmitted(false)
     setStudentView('report')
     const found = allAssignments.find(a => a.id === assignmentId)
-    if (found) setSelectedAssignment(found)
+    if (found) {
+      setSelectedAssignment(found)
+      setSelectedCourse(found.course)
+      setCourseName(found.course)
+    }
   }
 
   // 교수 — 긴급 문의 알림 클릭 시 문의 섹션 + 해당 학생 스레드로 이동
@@ -1056,13 +1484,15 @@ export default function Dashboard() {
     setInquiryTargetStudent(studentUserId)
   }
 
-  // 학생 — 사이드바 섹션 전환 시 서브뷰·배너·제출 상태 초기화
+  // 학생 — 사이드바 섹션 전환 시 서브뷰·배너·제출 상태 초기화 (과목 목록으로)
   const handleSetStudentSection = (s: StudentSection) => {
     setStudentSection(s)
-    setStudentView('list')
+    setStudentView('courses')
+    setSelectedCourse(null)
     setSelectedAssignmentId(null)
     setSelectedAssignment(null)
     setStudentInitialSubmitted(false)
+    setCourseName('')
   }
 
   if (!user) {
@@ -1092,6 +1522,7 @@ export default function Dashboard() {
         courseName={courseName}
         inquiryUnread={inquiryUnread}
       />
+
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar
           section={currentSection}
@@ -1102,37 +1533,66 @@ export default function Dashboard() {
           onOpenChatBot={view === 'student' ? () => setChatBotOpen(true) : undefined}
         />
         <DashboardInfoBar students={students} courseName={courseName} selectedAssignment={selectedAssignment} view={view} />
-        <main className="flex-1 p-6 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto" style={{ padding: '20px 24px' }}>
 
-          {/* ── 교수 ── */}
-          {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'list' && (
-            <InstructorAssignmentList
+          {/* ── 교수: 나의 강의 — 강의 목록 ── */}
+          {view === 'instructor' && instructorSection === 'courses' && !instructorSelectedCourse && (
+            <InstructorCourseListPage
               assignments={allAssignments}
-              onSelect={a => {
-                setCurrentAssignmentId(a.id)
-                setSelectedAssignment(a)
-                setInstructorGradingView('detail')
+              onSelectCourse={course => {
+                handleInstructorCourseSelect(course)
               }}
               onCreateNew={() => {
                 setSelectedAssignment(null)
                 setInstructorGradingView('create')
+                setInstructorSelectedCourse('new')
               }}
-              onDeleted={refreshAssignments}
             />
           )}
-          {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'create' && (
-            <div className="space-y-5 max-w-7xl mx-auto">
+          {view === 'instructor' && instructorSection === 'courses' && !!instructorSelectedCourse && instructorSelectedCourse !== 'new' && instructorGradingView === 'list' && (
+            <div className="space-y-4 w-full">
               <button
-                onClick={() => { setSelectedAssignment(null); setInstructorGradingView('list') }}
+                onClick={() => { setInstructorSelectedCourse(null); setSelectedAssignment(null) }}
                 className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
               >
-                <ChevronLeft size={15} /> 과제 목록으로
+                <ChevronLeft size={15} /> 강의 목록으로
               </button>
-              <RubricBuilder onPublished={handleAssignmentPublished} />
+              <InstructorAssignmentList
+                assignments={allAssignments}
+                courseFilter={instructorSelectedCourse}
+                onSelect={a => {
+                  setCurrentAssignmentId(a.id)
+                  setSelectedAssignment(a)
+                  setInstructorGradingView('detail')
+                }}
+                onCreateNew={() => {
+                  setSelectedAssignment(null)
+                  setInstructorGradingView('create')
+                }}
+                onDeleted={refreshAssignments}
+              />
             </div>
           )}
-          {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'detail' && (
-            <div className="space-y-5 max-w-7xl mx-auto">
+          {view === 'instructor' && instructorSection === 'courses' && (instructorSelectedCourse === 'new' || (!!instructorSelectedCourse && instructorGradingView === 'create')) && (
+            <div className="space-y-5 w-full">
+              <button
+                onClick={() => {
+                  setSelectedAssignment(null)
+                  setInstructorGradingView('list')
+                  if (instructorSelectedCourse === 'new') setInstructorSelectedCourse(null)
+                }}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
+              >
+                <ChevronLeft size={15} /> {instructorSelectedCourse === 'new' ? '강의 목록으로' : '과제 목록으로'}
+              </button>
+              <RubricBuilder
+                onPublished={id => { handleAssignmentPublished(id); setInstructorSelectedCourse(null) }}
+                defaultCourse={instructorSelectedCourse !== 'new' ? (instructorSelectedCourse ?? '') : ''}
+              />
+            </div>
+          )}
+          {view === 'instructor' && instructorSection === 'courses' && !!instructorSelectedCourse && instructorSelectedCourse !== 'new' && instructorGradingView === 'detail' && (
+            <div className="space-y-5 w-full">
               <button
                 onClick={() => { setSelectedAssignment(null); setInstructorGradingView('list') }}
                 className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
@@ -1143,13 +1603,15 @@ export default function Dashboard() {
               <GradeOptimizer assignmentId={currentAssignmentId} />
             </div>
           )}
+
+          {/* ── 교수: AI 채점 관리 (전체 과제 플랫 뷰) ── */}
           {view === 'instructor' && instructorSection === 'inquiries' && (
             <StudentInquiries
               initialStudentId={inquiryTargetStudent}
               onThreadSelected={() => setInquiryTargetStudent(null)}
             />
           )}
-          {view === 'instructor' && instructorSection !== 'grading' && instructorSection !== 'inquiries' && (
+          {view === 'instructor' && instructorSection !== 'courses' && instructorSection !== 'inquiries' && (
             <div className="flex items-center justify-center h-64 text-slate-400">
               <div className="text-center">
                 <BarChart3 size={40} className="mx-auto mb-3 opacity-30" />
@@ -1158,9 +1620,18 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* ── 학생 — 수강 과목 목록 (courses) ── */}
+          {view === 'student' && studentSection === 'assignments' && studentView === 'courses' && (
+            <StudentCourseList onSelectCourse={handleCourseSelect} />
+          )}
+
           {/* ── 학생 — 과제 목록 (list) ── */}
           {view === 'student' && studentSection === 'assignments' && studentView === 'list' && (
-            <StudentAssignmentList onSelect={handleStudentAssignmentSelect} />
+            <StudentAssignmentList
+              onSelect={handleStudentAssignmentSelect}
+              course={selectedCourse ?? ''}
+              onBack={handleStudentBackToCourses}
+            />
           )}
 
           {/* ── 학생 — 과제 제출 (submit) ── */}
@@ -1175,7 +1646,7 @@ export default function Dashboard() {
 
           {/* ── 학생 — 성적 리포트 (report) ── */}
           {view === 'student' && studentSection === 'assignments' && studentView === 'report' && (
-            <div className="max-w-5xl mx-auto">
+            <div className="w-full">
               <GradeReport
                 user={user}
                 assignmentId={selectedAssignmentId ?? undefined}
