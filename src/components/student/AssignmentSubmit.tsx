@@ -170,7 +170,7 @@ export default function AssignmentSubmit({
                 <Card key={a.id}>
                   <div
                     className="flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => !isPast && handleSelectAssignment(a)}
+                    onClick={() => handleSelectAssignment(a)}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -191,12 +191,11 @@ export default function AssignmentSubmit({
                     </div>
                     <Button
                       size="sm"
-                      variant={isPast ? 'ghost' : 'outline'}
+                      variant="outline"
                       className="ml-3 flex-shrink-0"
-                      disabled={isPast}
                       onClick={() => handleSelectAssignment(a)}
                     >
-                      {isPast ? '마감됨' : '제출하기 →'}
+                      {isPast ? '조회하기 →' : '제출하기 →'}
                     </Button>
                   </div>
                 </Card>

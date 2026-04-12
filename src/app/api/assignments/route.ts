@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
         SELECT a.*, u.name AS instructor_name
         FROM assignments a
         JOIN users u ON a.instructor_id = u.id
-        WHERE a.is_active = 1
+        WHERE a.is_active = 1 OR a.deadline < datetime('now')
         ORDER BY a.created_at DESC
       `)
       .all()
