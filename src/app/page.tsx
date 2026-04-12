@@ -331,17 +331,14 @@ function InstructorAssignmentList({
           {/* ── 구분선 + 완료 목록 ── */}
           {completed.length > 0 && (
             <section>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="flex-1 h-px bg-slate-200" />
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span className="text-sm font-700 text-slate-700">완료</span>
-                  <span className="text-xs text-slate-400">— 최종 승인 및 성적 공지 완료</span>
-                  <span className="text-xs font-700 bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                    {completed.length}건
-                  </span>
-                </div>
-                <div className="flex-1 h-px bg-slate-200" />
+              <div className="h-px bg-slate-200 mb-6" />
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-sm font-700 text-slate-700">완료</span>
+                <span className="text-xs text-slate-400">— 최종 승인 및 성적 공지 완료</span>
+                <span className="ml-auto text-xs font-700 bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                  {completed.length}건
+                </span>
               </div>
               <div className="space-y-2.5">
                 {completed.map((a, idx) => (
