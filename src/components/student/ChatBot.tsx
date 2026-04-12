@@ -119,7 +119,7 @@ export default function ChatBot({
         const profMsgs: ChatMessage[] = newReplies.map(n => ({
           role: 'professor' as const,
           text: n.body,
-          timestamp: new Date(n.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+          timestamp: new Date(n.created_at.replace(' ', 'T') + 'Z').toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
           notifId: n.id,
         }))
         setMessages(prev => [...prev, ...profMsgs])

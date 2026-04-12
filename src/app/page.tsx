@@ -210,7 +210,7 @@ function NotificationBell({
                         <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
                       )}
                       <div className="flex items-center justify-between mt-1">
-                        <p className="text-xs text-slate-300">{new Date(n.created_at).toLocaleString('ko-KR')}</p>
+                        <p className="text-xs text-slate-300">{new Date(n.created_at.replace(' ', 'T') + 'Z').toLocaleString('ko-KR')}</p>
                         {isClickable && (
                           <span className={`text-xs font-600 ${isInquiry ? 'text-red-500' : isProfReply ? 'text-amber-500' : 'text-indigo-500'}`}>
                             {isInquiry ? '답변하기 →' : isProfReply ? '챗봇 열기 →' : '성적 확인 →'}

@@ -19,7 +19,7 @@ interface StudentThread {
 }
 
 function formatTime(iso: string) {
-  const d = new Date(iso)
+  const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'Z'))
   return d.toLocaleString('ko-KR', {
     month: 'numeric', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
