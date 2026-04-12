@@ -39,9 +39,10 @@ export interface Assignment {
 }
 
 export interface ChatMessage {
-  role: 'bot' | 'user'
+  role: 'bot' | 'user' | 'professor'
   text: string
   timestamp: string
+  notifId?: string
 }
 
 export const MOCK_STUDENTS: Student[] = [

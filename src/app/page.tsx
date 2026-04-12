@@ -5,7 +5,7 @@ import {
   ClipboardList, BarChart3, Users, Settings, BookOpen,
   GraduationCap, ChevronRight, ChevronLeft, Bell, Search,
   FileText, LogOut, CheckCircle2, Calendar, Plus, Clock, Trash2,
-  RefreshCw,
+  RefreshCw, MessageSquare,
 } from 'lucide-react'
 import { MOCK_STUDENTS, MOCK_ASSIGNMENT } from '@/lib/mockData'
 import { getCurrentUser, logout } from '@/lib/auth'
@@ -13,6 +13,7 @@ import type { AuthUser } from '@/lib/auth'
 import RubricBuilder from '@/components/instructor/RubricBuilder'
 import GradingTable from '@/components/instructor/GradingTable'
 import GradeOptimizer from '@/components/instructor/GradeOptimizer'
+import StudentInquiries from '@/components/instructor/StudentInquiries'
 import GradeReport from '@/components/student/GradeReport'
 import AssignmentSubmit from '@/components/student/AssignmentSubmit'
 import ChatBot from '@/components/student/ChatBot'
@@ -20,7 +21,7 @@ import { Avatar, Badge, Button, Card } from '@/components/ui'
 import type { Student } from '@/lib/mockData'
 
 type ViewMode = 'instructor' | 'student'
-type InstructorSection = 'grading' | 'stats' | 'students' | 'settings'
+type InstructorSection = 'grading' | 'inquiries' | 'stats' | 'students' | 'settings'
 type StudentSection = 'assignments'
 // 학생 서브뷰: 목록 / 제출 폼 / 성적 리포트
 type StudentView = 'list' | 'submit' | 'report'
@@ -59,6 +60,7 @@ interface SubmissionSummary {
 
 const INSTRUCTOR_NAV: { id: InstructorSection; label: string; icon: React.ReactNode; sub?: string }[] = [
   { id: 'grading', label: 'AI 채점 관리', icon: <ClipboardList size={16} />, sub: '과제 · 루브릭 · 검토' },
+  { id: 'inquiries', label: '학생 긴급 문의', icon: <MessageSquare size={16} /> },
   { id: 'stats', label: '성적 통계', icon: <BarChart3 size={16} /> },
   { id: 'students', label: '수강생 관리', icon: <Users size={16} /> },
   { id: 'settings', label: '시스템 설정', icon: <Settings size={16} /> },
@@ -68,7 +70,15 @@ const STUDENT_NAV: { id: StudentSection; label: string; icon: React.ReactNode }[
 ]
 
 // ── Notification Bell ────────────────────────────────────────────────────────
-function NotificationBell({ onNavigate }: { onNavigate?: (assignmentId: string) => void }) {
+function NotificationBell({
+  onNavigateAssignment,
+  onNavigateInquiry,
+  onOpenChatBot,
+}: {
+  onNavigateAssignment?: (assignmentId: string) => void
+  onNavigateInquiry?: (studentUserId: string) => void
+  onOpenChatBot?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unread, setUnread] = useState(0)
@@ -101,8 +111,21 @@ function NotificationBell({ onNavigate }: { onNavigate?: (assignmentId: string) 
   }
 
   const handleNotifClick = (n: Notification) => {
-    if (n.assignment_id && onNavigate) {
-      onNavigate(n.assignment_id)
+    if (n.type === 'student_inquiry') {
+      // 교수: 문의한 학생의 답변 창으로 이동 (assignment_id = student user_id)
+      if (n.assignment_id && onNavigateInquiry) {
+        onNavigateInquiry(n.assignment_id)
+        setOpen(false)
+      }
+    } else if (n.type === 'professor_reply') {
+      // 학생: 챗봇 열기
+      if (onOpenChatBot) {
+        onOpenChatBot()
+        setOpen(false)
+      }
+    } else if (n.assignment_id && onNavigateAssignment) {
+      // 학생: 성적 리포트로 이동
+      onNavigateAssignment(n.assignment_id)
       setOpen(false)
     }
   }
@@ -135,31 +158,70 @@ function NotificationBell({ onNavigate }: { onNavigate?: (assignmentId: string) 
                 <Bell size={18} className="opacity-30" />
                 <p className="text-xs">알림이 없습니다</p>
               </div>
-            ) : notifications.map(n => (
-              <div
-                key={n.id}
-                onClick={() => handleNotifClick(n)}
-                className={`px-4 py-3 border-b border-slate-50 transition-colors ${
-                  n.assignment_id && onNavigate
-                    ? 'cursor-pointer hover:bg-indigo-50'
-                    : 'hover:bg-slate-50'
-                } ${n.is_read ? 'opacity-60' : ''}`}
-              >
-                <div className="flex items-start gap-2">
-                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${n.is_read ? 'bg-slate-300' : 'bg-indigo-500'}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-700 text-slate-800">{n.title}</p>
-                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <p className="text-xs text-slate-300">{new Date(n.created_at).toLocaleString('ko-KR')}</p>
-                      {n.assignment_id && onNavigate && (
-                        <span className="text-xs text-indigo-500 font-600">성적 확인 →</span>
+            ) : notifications.map(n => {
+              const isInquiry = n.type === 'student_inquiry'
+              const isProfReply = n.type === 'professor_reply'
+              const isClickable = isInquiry
+                ? !!onNavigateInquiry
+                : isProfReply
+                ? !!onOpenChatBot
+                : !!(n.assignment_id && onNavigateAssignment)
+              return (
+                <div
+                  key={n.id}
+                  onClick={() => handleNotifClick(n)}
+                  className={`px-4 py-3 border-b transition-colors ${
+                    isInquiry
+                      ? `border-red-100 ${n.is_read ? 'bg-red-50/30' : 'bg-red-50'} hover:bg-red-100/60 cursor-pointer`
+                      : isProfReply
+                      ? `border-amber-100 ${n.is_read ? 'bg-amber-50/30' : 'bg-amber-50'} hover:bg-amber-100/60 cursor-pointer`
+                      : `border-slate-50 ${isClickable ? 'cursor-pointer hover:bg-indigo-50' : 'hover:bg-slate-50'}`
+                  } ${n.is_read && !isInquiry && !isProfReply ? 'opacity-60' : ''}`}
+                >
+                  <div className="flex items-start gap-2">
+                    {isInquiry ? (
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${n.is_read ? 'bg-red-100' : 'bg-red-500'}`}>
+                        <span className="text-[9px]">{n.is_read ? '📩' : '🔴'}</span>
+                      </div>
+                    ) : isProfReply ? (
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${n.is_read ? 'bg-amber-100' : 'bg-amber-400'}`}>
+                        <span className="text-[9px]">👨‍🏫</span>
+                      </div>
+                    ) : (
+                      <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${n.is_read ? 'bg-slate-300' : 'bg-indigo-500'}`} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      {isInquiry && !n.is_read && (
+                        <span className="inline-block text-[9px] font-800 bg-red-500 text-white px-1.5 py-0.5 rounded-full mb-1">긴급 문의</span>
                       )}
+                      {isProfReply && !n.is_read && (
+                        <span className="inline-block text-[9px] font-800 bg-amber-500 text-white px-1.5 py-0.5 rounded-full mb-1">교수님 답변</span>
+                      )}
+                      <p className={`text-xs font-700 ${isInquiry ? 'text-red-700' : isProfReply ? 'text-amber-700' : 'text-slate-800'}`}>{n.title}</p>
+                      {/* 교수 측 긴급 문의: 학생 메시지 + 안내 문구 분리 표시 */}
+                      {isInquiry ? (
+                        <div className="mt-0.5 space-y-1">
+                          <p className="text-xs text-slate-700 bg-white border border-red-100 rounded-lg px-2 py-1 leading-relaxed">
+                            &ldquo;{n.body}&rdquo;
+                          </p>
+                          <p className="text-xs text-slate-400">학생이 직접 문의를 요청했습니다. 채점 현황을 확인하고 답변해 주세요.</p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
+                      )}
+                      <div className="flex items-center justify-between mt-1">
+                        <p className="text-xs text-slate-300">{new Date(n.created_at).toLocaleString('ko-KR')}</p>
+                        {isClickable && (
+                          <span className={`text-xs font-600 ${isInquiry ? 'text-red-500' : isProfReply ? 'text-amber-500' : 'text-indigo-500'}`}>
+                            {isInquiry ? '답변하기 →' : isProfReply ? '챗봇 열기 →' : '성적 확인 →'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -692,12 +754,13 @@ function SidebarItem({ icon, label, active, onClick, badge }: {
 function Sidebar({
   view, instructorSection, setInstructorSection,
   studentSection, setStudentSection,
-  students, user, onLogout, courseName,
+  students, user, onLogout, courseName, inquiryUnread,
 }: {
   view: ViewMode
   instructorSection: InstructorSection; setInstructorSection: (s: InstructorSection) => void
   studentSection: StudentSection; setStudentSection: (s: StudentSection) => void
   students: Student[]; user: AuthUser; onLogout: () => void; courseName: string
+  inquiryUnread: number
 }) {
   const pendingCount = students.filter(s => s.status === 'pending').length
 
@@ -738,7 +801,11 @@ function Sidebar({
                 label={item.label}
                 active={instructorSection === item.id}
                 onClick={() => setInstructorSection(item.id)}
-                badge={item.id === 'grading' && pendingCount > 0 ? String(pendingCount) : undefined}
+                badge={
+                  item.id === 'grading' && pendingCount > 0 ? String(pendingCount)
+                  : item.id === 'inquiries' && inquiryUnread > 0 ? String(inquiryUnread)
+                  : undefined
+                }
               />
             ))
           : STUDENT_NAV.map(item => (
@@ -797,10 +864,13 @@ function Sidebar({
 
 // ── Topbar ───────────────────────────────────────────────────────────────────
 function Topbar({
-  section, studentView, user, onNotificationNavigate,
+  section, studentView, user,
+  onNavigateAssignment, onNavigateInquiry, onOpenChatBot,
 }: {
   section: string; studentView?: StudentView; user: AuthUser
-  onNotificationNavigate?: (assignmentId: string) => void
+  onNavigateAssignment?: (assignmentId: string) => void
+  onNavigateInquiry?: (studentUserId: string) => void
+  onOpenChatBot?: () => void
 }) {
   const titles: Record<string, string> = {
     grading: 'AI 채점 관리', stats: '성적 통계', students: '수강생 관리',
@@ -838,7 +908,11 @@ function Topbar({
             className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:bg-white w-40"
           />
         </div>
-        <NotificationBell onNavigate={onNotificationNavigate} />
+        <NotificationBell
+          onNavigateAssignment={onNavigateAssignment}
+          onNavigateInquiry={onNavigateInquiry}
+          onOpenChatBot={onOpenChatBot}
+        />
         <Avatar name={user.name.charAt(0)} />
       </div>
     </header>
@@ -866,6 +940,9 @@ export default function Dashboard() {
   const [courseName, setCourseName] = useState(MOCK_ASSIGNMENT.course)
   const [allAssignments, setAllAssignments] = useState<AssignmentItem[]>([])
   const [instructorGradingView, setInstructorGradingView] = useState<InstructorGradingView>('list')
+  const [inquiryUnread, setInquiryUnread] = useState(0)
+  const [inquiryTargetStudent, setInquiryTargetStudent] = useState<string | null>(null)
+  const [chatBotOpen, setChatBotOpen] = useState(false)
 
   useEffect(() => {
     getCurrentUser().then(currentUser => {
@@ -890,6 +967,23 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => { refreshAssignments() }, [refreshAssignments])
+
+  // 교수: 긴급 문의 미확인 수 폴링 (10초)
+  useEffect(() => {
+    if (view !== 'instructor') return
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/chat/inquiries', { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          setInquiryUnread(data.totalUnread ?? 0)
+        }
+      } catch {}
+    }
+    poll()
+    const id = setInterval(poll, 10000)
+    return () => clearInterval(id)
+  }, [view])
 
   // 로그아웃: 하드 리다이렉트로 모든 상태 완전 초기화
   const handleLogout = async () => {
@@ -956,6 +1050,12 @@ export default function Dashboard() {
     if (found) setSelectedAssignment(found)
   }
 
+  // 교수 — 긴급 문의 알림 클릭 시 문의 섹션 + 해당 학생 스레드로 이동
+  const handleInquiryNavigate = (studentUserId: string) => {
+    handleSetInstructorSection('inquiries')
+    setInquiryTargetStudent(studentUserId)
+  }
+
   // 학생 — 사이드바 섹션 전환 시 서브뷰·배너·제출 상태 초기화
   const handleSetStudentSection = (s: StudentSection) => {
     setStudentSection(s)
@@ -990,13 +1090,16 @@ export default function Dashboard() {
         user={user}
         onLogout={handleLogout}
         courseName={courseName}
+        inquiryUnread={inquiryUnread}
       />
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar
           section={currentSection}
           studentView={view === 'student' ? studentView : undefined}
           user={user}
-          onNotificationNavigate={view === 'student' ? handleNotificationNavigate : undefined}
+          onNavigateAssignment={view === 'student' ? handleNotificationNavigate : undefined}
+          onNavigateInquiry={view === 'instructor' ? handleInquiryNavigate : undefined}
+          onOpenChatBot={view === 'student' ? () => setChatBotOpen(true) : undefined}
         />
         <DashboardInfoBar students={students} courseName={courseName} selectedAssignment={selectedAssignment} view={view} />
         <main className="flex-1 p-6 overflow-y-auto">
@@ -1040,7 +1143,13 @@ export default function Dashboard() {
               <GradeOptimizer assignmentId={currentAssignmentId} />
             </div>
           )}
-          {view === 'instructor' && instructorSection !== 'grading' && (
+          {view === 'instructor' && instructorSection === 'inquiries' && (
+            <StudentInquiries
+              initialStudentId={inquiryTargetStudent}
+              onThreadSelected={() => setInquiryTargetStudent(null)}
+            />
+          )}
+          {view === 'instructor' && instructorSection !== 'grading' && instructorSection !== 'inquiries' && (
             <div className="flex items-center justify-center h-64 text-slate-400">
               <div className="text-center">
                 <BarChart3 size={40} className="mx-auto mb-3 opacity-30" />
@@ -1076,7 +1185,13 @@ export default function Dashboard() {
           )}
         </main>
       </div>
-      {view === 'student' && <ChatBot user={user} />}
+      {view === 'student' && (
+        <ChatBot
+          user={user}
+          forceOpen={chatBotOpen}
+          onForceOpenHandled={() => setChatBotOpen(false)}
+        />
+      )}
     </div>
   )
 }
