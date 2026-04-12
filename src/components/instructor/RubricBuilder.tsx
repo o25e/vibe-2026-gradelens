@@ -1,9 +1,11 @@
 'use client'
 import { useState } from 'react'
-import { Plus, Sparkles, CheckCircle2, BookOpen, AlignLeft, Quote, Eye, FileText, X, Upload, FileCheck, File, Send } from 'lucide-react'
+import { Plus, Sparkles, CheckCircle2, BookOpen, AlignLeft, Quote, Eye, FileText, X, Upload, Send, Wand2 } from 'lucide-react'
 import { Button, Card, CardHeader, Badge } from '@/components/ui'
 import { AI_SUGGESTIONS, INITIAL_RUBRICS } from '@/lib/mockData'
 import type { RubricItem } from '@/lib/mockData'
+import SmartRubricGenerator from './SmartRubricGenerator'
+import type { AIRubricItem } from './SmartRubricGenerator'
 
 const categoryIcons: Record<string, React.ReactNode> = {
   structure:   <AlignLeft size={13} />,
@@ -35,9 +37,7 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
   const [newPts, setNewPts] = useState('')
   const [suggestionsUsed, setSuggestionsUsed] = useState<number[]>([])
 
-  const [uploadedFile, setUploadedFile] = useState<{ name: string; size: number } | null>(null)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
+  const [showGenerator, setShowGenerator] = useState(false)
 
   const [saving, setSaving] = useState(false)
   const [publishedId, setPublishedId] = useState<string | null>(null)
@@ -58,11 +58,16 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
     setRubrics(r => [...r, { id: Date.now(), text: s.text, pts: s.pts, category: 'logic' }])
   }
 
-  const handleFileUpload = async (f: File) => {
-    setUploadedFile({ name: f.name, size: f.size })
-    setAnalyzing(true)
-    await new Promise(r => setTimeout(r, 1800))
-    setAnalyzing(false)
+  // AI 생성 루브릭을 기존 목록에 반영
+  const handleAiGenerated = (aiRubrics: AIRubricItem[], _aiTotal: number) => {
+    const converted: RubricItem[] = aiRubrics.map(r => ({
+      id: Date.now() + r.id,
+      text: r.description ? `${r.criteria}\n${r.description}` : r.criteria,
+      pts: r.score,
+      category: 'logic' as const,
+    }))
+    setRubrics(converted)
+    setShowGenerator(false)
   }
 
   const handlePublish = async () => {
@@ -147,6 +152,16 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
         </div>
       )}
 
+      {/* AI Rubric Generator Panel */}
+      {showGenerator && (
+        <div className="mb-5">
+          <SmartRubricGenerator
+            assignmentTitle={title}
+            onApply={handleAiGenerated}
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-5">
         {/* Left: Assignment Editor */}
         <div className="space-y-3">
@@ -192,49 +207,27 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
             />
           </div>
 
-          {/* File Upload */}
+          {/* AI 루브릭 생성 버튼 */}
           <div>
             <label className="block text-xs font-600 text-slate-500 mb-1.5">
               <Upload size={11} className="inline mr-1 text-slate-400" />
-              강의계획서 / 과제 가이드라인 업로드
+              AI 채점 기준 자동 생성
             </label>
-            {uploadedFile ? (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
-                  <FileCheck size={14} className="text-emerald-600 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-600 text-emerald-700 truncate">{uploadedFile.name}</div>
-                    <div className="text-xs text-emerald-500">
-                      {(uploadedFile.size / 1024).toFixed(1)} KB
-                      {analyzing ? ' · AI 분석 중...' : ' · AI 분석 완료'}
-                    </div>
-                  </div>
-                  {!analyzing && (
-                    <button onClick={() => setUploadedFile(null)} className="text-emerald-400 hover:text-red-500 transition-colors">
-                      <X size={13} />
-                    </button>
-                  )}
-                  {analyzing && <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
-                </div>
+            <button
+              onClick={() => setShowGenerator(v => !v)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-150 ${
+                showGenerator
+                  ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 text-slate-500'
+              }`}
+            >
+              <Wand2 size={15} className={showGenerator ? 'text-indigo-500' : 'text-slate-300'} />
+              <div className="text-left">
+                <div className="text-xs font-600">강의계획서·가이드라인에서 채점 기준 자동 설계</div>
+                <div className="text-xs opacity-70">파일 업로드 또는 텍스트 붙여넣기 → AI가 루브릭 항목 생성</div>
               </div>
-            ) : (
-              <label
-                onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFileUpload(f) }}
-                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-150 ${
-                  dragOver ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'
-                }`}
-              >
-                <input type="file" accept=".pdf,.doc,.docx,.hwp" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f) }} />
-                <File size={16} className={dragOver ? 'text-indigo-400' : 'text-slate-300'} />
-                <div>
-                  <div className="text-xs font-600 text-slate-500">파일을 드래그하거나 클릭하여 업로드</div>
-                  <div className="text-xs text-slate-400">PDF · DOC · DOCX · HWP</div>
-                </div>
-              </label>
-            )}
+              {showGenerator && <X size={13} className="ml-auto text-indigo-400" />}
+            </button>
           </div>
 
           {/* Add rubric */}
@@ -300,7 +293,12 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${categoryColors[r.category]}`}>
                   {categoryIcons[r.category]}
                 </div>
-                <span className="flex-1 text-sm text-slate-700 leading-snug">{r.text}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-slate-700 leading-snug">{r.text.split('\n')[0]}</div>
+                  {r.text.includes('\n') && (
+                    <div className="text-xs text-slate-400 mt-0.5 leading-snug line-clamp-1">{r.text.split('\n').slice(1).join(' ')}</div>
+                  )}
+                </div>
                 <span className="text-sm font-700 text-indigo-600 flex-shrink-0">{r.pts}점</span>
                 <button
                   onClick={() => removeRubric(r.id)}
