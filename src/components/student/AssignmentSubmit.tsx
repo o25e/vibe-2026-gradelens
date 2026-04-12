@@ -21,10 +21,13 @@ const GRADING_MESSAGES = [
 export default function AssignmentSubmit({
   user,
   initialAssignmentId,
+  initialSubmitted = false,
   onBack,
 }: {
   user: AuthUser
   initialAssignmentId?: string
+  /** 이미 제출된 과제 재진입 시 true로 설정하면 제출 완료 화면으로 시작 */
+  initialSubmitted?: boolean
   onBack?: () => void
 }) {
   const [assignments, setAssignments] = useState<Assignment[]>([])
@@ -37,7 +40,8 @@ export default function AssignmentSubmit({
 
   const [submitting, setSubmitting] = useState(false)
   const [gradingMsg, setGradingMsg] = useState(0)
-  const [submitted, setSubmitted] = useState(false)
+  // initialSubmitted prop이 true면 처음부터 제출 완료 상태로 표시
+  const [submitted, setSubmitted] = useState(initialSubmitted)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAssignments = useCallback(async () => {
@@ -190,7 +194,7 @@ export default function AssignmentSubmit({
                       variant={isPast ? 'ghost' : 'outline'}
                       className="ml-3 flex-shrink-0"
                       disabled={isPast}
-                      onClick={e => { e.stopPropagation(); handleSelectAssignment(a) }}
+                      onClick={() => handleSelectAssignment(a)}
                     >
                       {isPast ? '마감됨' : '제출하기 →'}
                     </Button>

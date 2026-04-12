@@ -3,11 +3,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ClipboardList, BarChart3, Users, Settings, BookOpen,
-  Trophy, GraduationCap, ChevronRight, ChevronLeft, Bell, Search,
+  GraduationCap, ChevronRight, ChevronLeft, Bell, Search,
   FileText, LogOut, CheckCircle2, Calendar, Plus, Clock, Trash2,
   RefreshCw,
 } from 'lucide-react'
-import { MOCK_STUDENTS, MOCK_ASSIGNMENT, INITIAL_RUBRICS } from '@/lib/mockData'
+import { MOCK_STUDENTS, MOCK_ASSIGNMENT } from '@/lib/mockData'
 import { getCurrentUser, logout } from '@/lib/auth'
 import type { AuthUser } from '@/lib/auth'
 import RubricBuilder from '@/components/instructor/RubricBuilder'
@@ -21,7 +21,7 @@ import type { Student } from '@/lib/mockData'
 
 type ViewMode = 'instructor' | 'student'
 type InstructorSection = 'grading' | 'stats' | 'students' | 'settings'
-type StudentSection = 'assignments' | 'ranking'
+type StudentSection = 'assignments'
 // 학생 서브뷰: 목록 / 제출 폼 / 성적 리포트
 type StudentView = 'list' | 'submit' | 'report'
 type InstructorGradingView = 'list' | 'detail' | 'create'
@@ -62,7 +62,6 @@ const INSTRUCTOR_NAV: { id: InstructorSection; label: string; icon: React.ReactN
 ]
 const STUDENT_NAV: { id: StudentSection; label: string; icon: React.ReactNode }[] = [
   { id: 'assignments', label: '과제 목록', icon: <BookOpen size={16} /> },
-  { id: 'ranking', label: '학급 순위', icon: <Trophy size={16} /> },
 ]
 
 // ── Notification Bell ────────────────────────────────────────────────────────
@@ -173,7 +172,7 @@ function InstructorAssignmentList({
   onDeleted,
 }: {
   assignments: AssignmentItem[]
-  onSelect: (id: string) => void
+  onSelect: (assignment: AssignmentItem) => void
   onCreateNew: () => void
   onDeleted: () => void
 }) {
@@ -210,7 +209,7 @@ function InstructorAssignmentList({
             return (
               <div
                 key={a.id}
-                onClick={() => onSelect(a.id)}
+                onClick={() => onSelect(a)}
                 className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center justify-between cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all"
               >
                 <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -261,11 +260,14 @@ function InstructorAssignmentList({
   )
 }
 
+// 학생 과제 제출 상태 타입
+type SubmissionStatus = 'none' | 'waiting' | 'published'
+
 // ── Student Assignment List (제출 현황 포함) ────────────────────────────────
 function StudentAssignmentList({
   onSelect,
 }: {
-  onSelect: (assignmentId: string, hasSubmission: boolean) => void
+  onSelect: (assignment: AssignmentItem, status: SubmissionStatus) => void
 }) {
   const [assignments, setAssignments] = useState<AssignmentItem[]>([])
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([])
@@ -335,28 +337,37 @@ function StudentAssignmentList({
           const isPast = now > deadline
           const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
 
-          // 상태 배지 결정
+          // 제출 상태 결정
+          let submissionStatus: SubmissionStatus
+          if (!sub) {
+            submissionStatus = 'none'
+          } else if (sub.grade_status === 'waiting' || (sub.ai_score === null && sub.confirmed_score === null)) {
+            submissionStatus = 'waiting'
+          } else {
+            submissionStatus = 'published'
+          }
+
+          // 상태 배지 결정 ('채점 대기 중' 대신 '제출됨'으로 즉시 반영)
           let statusBadge: React.ReactNode
           let actionLabel: string
-          if (!sub) {
+          if (submissionStatus === 'none') {
             statusBadge = <Badge variant={isPast ? 'danger' : 'warning'}>미제출</Badge>
             actionLabel = isPast ? '마감됨' : '제출하기 →'
-          } else if (sub.grade_status === 'waiting' || (sub.ai_score === null && sub.confirmed_score === null)) {
-            statusBadge = <Badge variant="warning">채점 대기 중</Badge>
-            actionLabel = '대기 중 →'
+          } else if (submissionStatus === 'waiting') {
+            statusBadge = <Badge variant="info">제출됨</Badge>
+            actionLabel = '제출 확인 →'
           } else {
             statusBadge = <Badge variant="success">성적 공개됨</Badge>
             actionLabel = '성적 확인 →'
           }
 
-          const clickable = !isPast || !!sub
-          const hasSubmission = !!sub
+          const clickable = submissionStatus !== 'none' || !isPast
 
           return (
             <Card key={a.id}>
               <div
                 className={`flex items-center justify-between ${clickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'opacity-60'}`}
-                onClick={() => clickable && onSelect(a.id, hasSubmission)}
+                onClick={() => clickable && onSelect(a, submissionStatus)}
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -376,10 +387,10 @@ function StudentAssignmentList({
                 </div>
                 {clickable && (
                   <span className={`text-xs font-600 ml-3 flex-shrink-0 ${
-                    hasSubmission && sub && sub.grade_status !== 'waiting' && sub.ai_score !== null
+                    submissionStatus === 'published'
                       ? 'text-emerald-600'
-                      : hasSubmission
-                      ? 'text-amber-600'
+                      : submissionStatus === 'waiting'
+                      ? 'text-indigo-600'
                       : 'text-indigo-600'
                   }`}>
                     {actionLabel}
@@ -396,102 +407,161 @@ function StudentAssignmentList({
 
 // ── Info Bar ─────────────────────────────────────────────────────────────────
 function DashboardInfoBar({
-  view, students, user, courseName,
+  students, courseName, selectedAssignment, view,
 }: {
-  view: ViewMode; students: Student[]; user: AuthUser; courseName: string
+  students: Student[]; courseName: string
+  selectedAssignment?: AssignmentItem | null
+  view: ViewMode
 }) {
+  // 교수 모드 전용 통계
   const confirmed = students.filter(s => s.status === 'confirmed')
   const completionPct = students.length ? Math.round(confirmed.length / students.length * 100) : 0
   const avgScore = confirmed.length > 0
     ? Math.round(confirmed.reduce((a, s) => a + (s.confirmedScore ?? s.aiScore), 0) / confirmed.length)
     : 0
 
-  const sortedByScore = [...confirmed].sort((a, b) => (b.confirmedScore ?? 0) - (a.confirmedScore ?? 0))
-  const studentRank = Math.max(
-    1,
-    sortedByScore.findIndex(s => s.studentId === user.studentId || s.name === user.name) + 1 || 1
+  // 학생 모드 전용 통계: 미제출 과제 수, 미읽은 알림 수
+  const [studentStats, setStudentStats] = useState({ remaining: 0, unreadNotifs: 0 })
+
+  const fetchStudentStats = useCallback(async () => {
+    if (view !== 'student') return
+    try {
+      const [aRes, sRes, nRes] = await Promise.all([
+        fetch('/api/assignments', { cache: 'no-store' }),
+        fetch('/api/submissions', { cache: 'no-store' }),
+        fetch('/api/notifications', { cache: 'no-store' }),
+      ])
+      const aData = await aRes.json()
+      const sData = await sRes.json()
+      const nData = await nRes.json()
+      const assignments: AssignmentItem[] = aData.assignments ?? []
+      const submissions: SubmissionSummary[] = sData.submissions ?? []
+      const submittedIds = new Set(submissions.map(s => s.assignment_id))
+      const now = new Date()
+      // 마감 전이고 아직 제출하지 않은 과제 수
+      const remaining = assignments.filter(
+        a => !submittedIds.has(a.id) && new Date(a.deadline) > now
+      ).length
+      setStudentStats({ remaining, unreadNotifs: nData.unreadCount ?? 0 })
+    } catch {}
+  }, [view])
+
+  useEffect(() => {
+    fetchStudentStats()
+    const id = setInterval(fetchStudentStats, 15000)
+    return () => clearInterval(id)
+  }, [fetchStudentStats])
+
+  // 마감일 포맷 (선택된 과제용)
+  const deadlineLabel = selectedAssignment
+    ? new Date(selectedAssignment.deadline).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })
+    : null
+  const isDeadlinePast = selectedAssignment ? new Date() > new Date(selectedAssignment.deadline) : false
+
+  // 오른쪽 과제 정보 블록 (교수·학생 공통)
+  const AssignmentInfoRight = selectedAssignment ? (
+    <>
+      <div className="flex items-center gap-1.5">
+        <FileText size={13} className="text-indigo-500" />
+        <div>
+          <div className="text-xs text-slate-400 leading-none mb-0.5">선택된 과제</div>
+          <div className="text-sm font-700 text-indigo-700 leading-none max-w-[200px] truncate">
+            {selectedAssignment.title}
+          </div>
+        </div>
+      </div>
+      <div className="w-px h-7 bg-slate-100" />
+      <div className="flex items-center gap-1.5">
+        <Calendar size={13} className={isDeadlinePast ? 'text-red-400' : 'text-slate-400'} />
+        <div>
+          <div className="text-xs text-slate-400 leading-none mb-0.5">마감일</div>
+          <div className={`text-sm font-700 leading-none ${isDeadlinePast ? 'text-red-500' : 'text-slate-700'}`}>
+            {deadlineLabel}{isDeadlinePast ? ' (마감)' : ''}
+          </div>
+        </div>
+      </div>
+      <div className="w-px h-7 bg-slate-100" />
+      <div>
+        <div className="text-xs text-slate-400 leading-none mb-0.5">과목명</div>
+        <div className="text-sm font-700 text-indigo-700 leading-none">{selectedAssignment.course}</div>
+      </div>
+    </>
+  ) : (
+    <>
+      <div className="flex items-center gap-1.5">
+        <Calendar size={13} className="text-slate-400" />
+        <div>
+          <div className="text-xs text-slate-400 leading-none mb-0.5">현재 학기</div>
+          <div className="text-sm font-700 text-slate-700 leading-none">2026년 1학기</div>
+        </div>
+      </div>
+      <div className="w-px h-7 bg-slate-100" />
+      <div>
+        <div className="text-xs text-slate-400 leading-none mb-0.5">과목명</div>
+        <div className="text-sm font-700 text-indigo-700 leading-none">{courseName}</div>
+      </div>
+    </>
   )
-  const rankPct = sortedByScore.length > 0
-    ? Math.round((1 - (studentRank - 1) / sortedByScore.length) * 100)
-    : 100
-  const topRubrics = INITIAL_RUBRICS.slice(0, 2).map(r => `${r.text.slice(0, 6)} ${r.pts}점`).join(' · ')
 
   return (
     <div className="bg-white border-b border-slate-200 px-6 py-2.5">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-1.5">
-            <Users size={13} className="text-slate-400" />
-            <div>
-              <div className="text-xs text-slate-400 leading-none mb-0.5">총 수강생</div>
-              <div className="text-sm font-700 text-slate-800 leading-none">{students.length}명</div>
-            </div>
-          </div>
-          <div className="w-px h-7 bg-slate-100" />
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 size={13} className="text-emerald-500" />
-            <div>
-              <div className="text-xs text-slate-400 leading-none mb-0.5">채점 완료</div>
-              <div className="text-sm font-700 text-emerald-600 leading-none">{completionPct}%</div>
-            </div>
-          </div>
-          <div className="w-px h-7 bg-slate-100" />
-          <div className="flex items-center gap-1.5">
-            <BarChart3 size={13} className="text-indigo-500" />
-            <div>
-              <div className="text-xs text-slate-400 leading-none mb-0.5">전체 평균</div>
-              <div className="text-sm font-700 text-indigo-600 leading-none">{avgScore || '—'}점</div>
-            </div>
-          </div>
-          <div className="w-px h-7 bg-slate-100" />
-          <div className="flex items-center gap-1.5">
-            <ClipboardList size={13} className="text-violet-500" />
-            <div>
-              <div className="text-xs text-slate-400 leading-none mb-0.5">주요 채점 기준</div>
-              <div className="text-xs font-600 text-slate-600 leading-none">{topRubrics}</div>
-            </div>
-          </div>
 
-          {view === 'student' && sortedByScore.length > 0 && (
-            <>
-              <div className="w-px h-7 bg-slate-100" />
-              <div className="flex items-center gap-2">
-                <Trophy size={13} className="text-amber-500" />
-                <div>
-                  <div className="text-xs text-slate-400 leading-none mb-0.5">내 순위</div>
-                  <div className="flex items-baseline gap-1 leading-none">
-                    <span className="text-sm font-800 text-amber-600">{studentRank}위</span>
-                    <span className="text-xs text-slate-400">/ {sortedByScore.length}명</span>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-0.5 ml-1">
-                  <div className="text-xs font-700 text-amber-600 leading-none text-right">상위 {rankPct}%</div>
-                  <div className="relative w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-red-300 via-amber-300 to-emerald-400 rounded-full" />
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-full shadow-sm"
-                      style={{ left: `calc(${rankPct}% - 6px)` }}
-                    />
-                  </div>
+        {/* 왼쪽: 교수 모드는 수강생 통계, 학생 모드는 학기·과목 정보 */}
+        {view === 'instructor' ? (
+          <div className="flex items-center gap-5">
+            <div className="flex items-center gap-1.5">
+              <Users size={13} className="text-slate-400" />
+              <div>
+                <div className="text-xs text-slate-400 leading-none mb-0.5">총 수강생</div>
+                <div className="text-sm font-700 text-slate-800 leading-none">{students.length}명</div>
+              </div>
+            </div>
+            <div className="w-px h-7 bg-slate-100" />
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 size={13} className="text-emerald-500" />
+              <div>
+                <div className="text-xs text-slate-400 leading-none mb-0.5">채점 완료</div>
+                <div className="text-sm font-700 text-emerald-600 leading-none">{completionPct}%</div>
+              </div>
+            </div>
+            <div className="w-px h-7 bg-slate-100" />
+            <div className="flex items-center gap-1.5">
+              <BarChart3 size={13} className="text-indigo-500" />
+              <div>
+                <div className="text-xs text-slate-400 leading-none mb-0.5">전체 평균</div>
+                <div className="text-sm font-700 text-indigo-600 leading-none">{avgScore || '—'}점</div>
+              </div>
+            </div>
+            </div>
+        ) : (
+          /* 학생 모드: 남은 과제 수 + 새 알림 수 */
+          <div className="flex items-center gap-5">
+            <div className="flex items-center gap-1.5">
+              <ClipboardList size={13} className="text-amber-500" />
+              <div>
+                <div className="text-xs text-slate-400 leading-none mb-0.5">남은 과제</div>
+                <div className={`text-sm font-700 leading-none ${studentStats.remaining > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {studentStats.remaining}개
                 </div>
               </div>
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <Calendar size={13} className="text-slate-400" />
-            <div>
-              <div className="text-xs text-slate-400 leading-none mb-0.5">현재 학기</div>
-              <div className="text-sm font-700 text-slate-700 leading-none">2026년 1학기</div>
+            </div>
+            <div className="w-px h-7 bg-slate-100" />
+            <div className="flex items-center gap-1.5">
+              <Bell size={13} className={studentStats.unreadNotifs > 0 ? 'text-red-400' : 'text-slate-400'} />
+              <div>
+                <div className="text-xs text-slate-400 leading-none mb-0.5">새 공지</div>
+                <div className={`text-sm font-700 leading-none ${studentStats.unreadNotifs > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                  {studentStats.unreadNotifs > 0 ? `${studentStats.unreadNotifs}개` : '없음'}
+                </div>
+              </div>
             </div>
           </div>
-          <div className="w-px h-7 bg-slate-100" />
-          <div>
-            <div className="text-xs text-slate-400 leading-none mb-0.5">과목명</div>
-            <div className="text-sm font-700 text-indigo-700 leading-none">{courseName}</div>
-          </div>
+        )}
+
+        {/* 오른쪽: 과제 선택 시 해당 과제 정보, 미선택 시 학기·과목명 (교수·학생 공통) */}
+        <div className="flex items-center gap-4">
+          {AssignmentInfoRight}
         </div>
       </div>
     </div>
@@ -638,7 +708,7 @@ function Topbar({
 }) {
   const titles: Record<string, string> = {
     grading: 'AI 채점 관리', stats: '성적 통계', students: '수강생 관리',
-    settings: '시스템 설정', assignments: '과제 목록', ranking: '학급 순위',
+    settings: '시스템 설정', assignments: '과제 목록',
   }
   const subByView: Record<StudentView, string> = {
     list: '과제를 클릭하면 제출하거나 성적 리포트를 확인할 수 있습니다',
@@ -691,6 +761,10 @@ export default function Dashboard() {
   // 학생 서브뷰 상태
   const [studentView, setStudentView] = useState<StudentView>('list')
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null)
+  // 배너 동기화용: 현재 선택된 과제 전체 정보
+  const [selectedAssignment, setSelectedAssignment] = useState<AssignmentItem | null>(null)
+  // 학생이 이미 제출한 과제 재진입 시 제출 완료 상태로 초기화
+  const [studentInitialSubmitted, setStudentInitialSubmitted] = useState(false)
 
   const [currentAssignmentId, setCurrentAssignmentId] = useState<string | undefined>(undefined)
   const [courseName, setCourseName] = useState(MOCK_ASSIGNMENT.course)
@@ -727,6 +801,14 @@ export default function Dashboard() {
     window.location.href = '/login'
   }
 
+  // 교수 — 새 과제 발행 후 currentAssignmentId가 바뀌면 배너 동기화
+  useEffect(() => {
+    if (currentAssignmentId && allAssignments.length > 0) {
+      const found = allAssignments.find(a => a.id === currentAssignmentId)
+      if (found) setSelectedAssignment(found)
+    }
+  }, [currentAssignmentId, allAssignments])
+
   const handleAssignmentPublished = (id: string) => {
     setCurrentAssignmentId(id)
     refreshAssignments()
@@ -735,35 +817,56 @@ export default function Dashboard() {
 
   const handleSetInstructorSection = (s: InstructorSection) => {
     setInstructorSection(s)
-    if (s === 'grading') setInstructorGradingView('list')
+    if (s === 'grading') {
+      setInstructorGradingView('list')
+      setSelectedAssignment(null)
+    }
   }
 
-  // 학생 — 과제 목록에서 항목 클릭
-  const handleStudentAssignmentSelect = (assignmentId: string, hasSubmission: boolean) => {
-    setSelectedAssignmentId(assignmentId)
-    setStudentView(hasSubmission ? 'report' : 'submit')
+  // 학생 — 과제 목록에서 항목 클릭: 전체 과제 정보로 배너 동기화
+  // · waiting → 제출 폼(이미 제출됨 상태로 초기화)으로 이동
+  // · published → 성적 리포트로 이동
+  // · none → 제출 폼으로 이동
+  const handleStudentAssignmentSelect = (assignment: AssignmentItem, status: SubmissionStatus) => {
+    setSelectedAssignmentId(assignment.id)
+    setSelectedAssignment(assignment)
+    if (status === 'published') {
+      setStudentInitialSubmitted(false)
+      setStudentView('report')
+    } else if (status === 'waiting') {
+      setStudentInitialSubmitted(true)
+      setStudentView('submit')
+    } else {
+      setStudentInitialSubmitted(false)
+      setStudentView('submit')
+    }
   }
 
-  // 학생 — 목록으로 돌아가기
+  // 학생 — 목록으로 돌아가기: 배너 및 제출 상태 초기화
   const handleStudentBackToList = () => {
     setStudentView('list')
     setSelectedAssignmentId(null)
+    setSelectedAssignment(null)
+    setStudentInitialSubmitted(false)
   }
 
-  // 학생 — 알림 클릭 시 해당 과제 리포트로 이동
+  // 학생 — 알림 클릭 시 해당 과제 성적 리포트로 이동
   const handleNotificationNavigate = (assignmentId: string) => {
     setStudentSection('assignments')
     setSelectedAssignmentId(assignmentId)
+    setStudentInitialSubmitted(false)
     setStudentView('report')
+    const found = allAssignments.find(a => a.id === assignmentId)
+    if (found) setSelectedAssignment(found)
   }
 
-  // 학생 — 사이드바 섹션 전환 시 서브뷰 초기화
+  // 학생 — 사이드바 섹션 전환 시 서브뷰·배너·제출 상태 초기화
   const handleSetStudentSection = (s: StudentSection) => {
     setStudentSection(s)
-    if (s === 'assignments') {
-      setStudentView('list')
-      setSelectedAssignmentId(null)
-    }
+    setStudentView('list')
+    setSelectedAssignmentId(null)
+    setSelectedAssignment(null)
+    setStudentInitialSubmitted(false)
   }
 
   if (!user) {
@@ -799,25 +902,29 @@ export default function Dashboard() {
           user={user}
           onNotificationNavigate={view === 'student' ? handleNotificationNavigate : undefined}
         />
-        <DashboardInfoBar view={view} students={students} user={user} courseName={courseName} />
+        <DashboardInfoBar students={students} courseName={courseName} selectedAssignment={selectedAssignment} view={view} />
         <main className="flex-1 p-6 overflow-y-auto">
 
           {/* ── 교수 ── */}
           {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'list' && (
             <InstructorAssignmentList
               assignments={allAssignments}
-              onSelect={id => {
-                setCurrentAssignmentId(id)
+              onSelect={a => {
+                setCurrentAssignmentId(a.id)
+                setSelectedAssignment(a)
                 setInstructorGradingView('detail')
               }}
-              onCreateNew={() => setInstructorGradingView('create')}
+              onCreateNew={() => {
+                setSelectedAssignment(null)
+                setInstructorGradingView('create')
+              }}
               onDeleted={refreshAssignments}
             />
           )}
           {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'create' && (
             <div className="space-y-5 max-w-7xl mx-auto">
               <button
-                onClick={() => setInstructorGradingView('list')}
+                onClick={() => { setSelectedAssignment(null); setInstructorGradingView('list') }}
                 className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
               >
                 <ChevronLeft size={15} /> 과제 목록으로
@@ -828,7 +935,7 @@ export default function Dashboard() {
           {view === 'instructor' && instructorSection === 'grading' && instructorGradingView === 'detail' && (
             <div className="space-y-5 max-w-7xl mx-auto">
               <button
-                onClick={() => setInstructorGradingView('list')}
+                onClick={() => { setSelectedAssignment(null); setInstructorGradingView('list') }}
                 className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors"
               >
                 <ChevronLeft size={15} /> 과제 목록으로
@@ -856,6 +963,7 @@ export default function Dashboard() {
             <AssignmentSubmit
               user={user}
               initialAssignmentId={selectedAssignmentId ?? undefined}
+              initialSubmitted={studentInitialSubmitted}
               onBack={handleStudentBackToList}
             />
           )}
@@ -868,16 +976,6 @@ export default function Dashboard() {
                 assignmentId={selectedAssignmentId ?? undefined}
                 onBack={handleStudentBackToList}
               />
-            </div>
-          )}
-
-          {/* ── 학생 — 학급 순위 ── */}
-          {view === 'student' && studentSection === 'ranking' && (
-            <div className="flex items-center justify-center h-64 text-slate-400">
-              <div className="text-center">
-                <Trophy size={40} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm">이 섹션은 준비 중입니다</p>
-              </div>
             </div>
           )}
         </main>
