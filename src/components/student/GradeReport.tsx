@@ -182,7 +182,9 @@ export default function GradeReport({
     )
   }
 
+  // 최종 점수: 교수 확정 점수 우선, 없으면 AI 점수
   const score = submission.confirmed_score ?? submission.ai_score ?? 0
+  const isConfirmed = submission.confirmed_score !== null
   const totalPts = submission.rubric_scores?.reduce((a, r) => a + r.max_pts, 0) ?? 100
 
   const gradeLabel =
@@ -231,7 +233,7 @@ export default function GradeReport({
         <div className="relative mt-5 flex items-end justify-between">
           <div>
             <div className="text-indigo-200 text-xs font-600 uppercase tracking-wide mb-1">
-              {submission.confirmed_score ? '최종 확정 점수' : 'AI 채점 점수'}
+              {isConfirmed ? '교수 최종 확정 점수' : 'AI 채점 점수'}
             </div>
             <div className="text-5xl font-900 tracking-tight">
               {score}<span className="text-2xl text-indigo-300 font-500">/{totalPts}</span>
@@ -301,8 +303,13 @@ export default function GradeReport({
                   <div className="text-sm font-700 text-slate-800">점수 산출 근거</div>
                   <div className="text-xs text-slate-400">왜 이 점수가 부여되었는가</div>
                 </div>
-                <span className="ml-auto inline-flex items-center gap-1 bg-indigo-600 text-white text-xs font-700 px-2 py-0.5 rounded-full">
-                  <TrendingUp size={9} /> AI 분석
+                <span className={`ml-auto inline-flex items-center gap-1 text-xs font-700 px-2 py-0.5 rounded-full ${
+                  isConfirmed
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-indigo-600 text-white'
+                }`}>
+                  <TrendingUp size={9} />
+                  {isConfirmed ? '교수 확정' : 'AI 분석'}
                 </span>
               </div>
 

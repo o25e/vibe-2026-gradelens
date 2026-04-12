@@ -2,11 +2,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   CheckCircle2, Bell, AlertCircle, RefreshCw, Sparkles,
-  FileText, Image, File, ChevronDown, ChevronUp, Eye,
+  FileText, Image, File, ChevronDown, ChevronUp, Eye, Edit3,
 } from 'lucide-react'
 import { Button, Card, CardHeader, Badge, Avatar, Modal, StatCard } from '@/components/ui'
 
 type GradeStatus = 'confirmed' | 'pending' | 'flagged'
+
+interface RubricScore {
+  rubric_text: string
+  max_pts: number
+  score: number
+  reason: string
+}
 
 interface Submission {
   id: string
@@ -21,7 +28,7 @@ interface Submission {
   confirmed_score: number | null
   grade_status: GradeStatus
   feedback_short: string | null
-  rubric_scores: { rubric_text: string; max_pts: number; score: number; reason: string }[] | null
+  rubric_scores: RubricScore[] | null
   grade_id: string | null
   is_published: number
 }
@@ -118,7 +125,11 @@ export default function GradingTable({ assignmentId }: Props) {
   const [modal, setModal] = useState<Submission | null>(null)
   const [editFeedback, setEditFeedback] = useState('')
   const [editScore, setEditScore] = useState('')
+  // 교수가 직접 수정 가능한 루브릭 점수 사본
+  const [editRubrics, setEditRubrics] = useState<RubricScore[]>([])
   const [saving, setSaving] = useState(false)
+  // AI 루브릭 재분석 로딩 상태
+  const [reanalyzing, setReanalyzing] = useState(false)
 
   const fetchSubmissions = useCallback(async () => {
     if (!assignmentId) return
@@ -138,6 +149,46 @@ export default function GradingTable({ assignmentId }: Props) {
     setModal(s)
     setEditFeedback(s.feedback_short ?? '')
     setEditScore(String(s.confirmed_score ?? s.ai_score ?? ''))
+    // 루브릭 점수 깊은 복사 (직접 수정용)
+    setEditRubrics(s.rubric_scores ? s.rubric_scores.map(r => ({ ...r })) : [])
+  }
+
+  // 루브릭 점수 변경 시 합계를 editScore에 자동 반영
+  const updateRubricScore = (idx: number, value: number) => {
+    const updated = editRubrics.map((r, i) =>
+      i === idx ? { ...r, score: Math.min(r.max_pts, Math.max(0, value)) } : r
+    )
+    setEditRubrics(updated)
+    const total = updated.reduce((a, r) => a + r.score, 0)
+    setEditScore(String(total))
+  }
+
+  // 루브릭 평가 근거 텍스트 변경
+  const updateRubricReason = (idx: number, value: string) => {
+    setEditRubrics(prev => prev.map((r, i) => i === idx ? { ...r, reason: value } : r))
+  }
+
+  // AI 피드백 기반 루브릭 재분석 요청
+  const handleReanalyze = async () => {
+    if (!modal?.grade_id || !editFeedback.trim()) return
+    setReanalyzing(true)
+    try {
+      const res = await fetch(`/api/grades/${modal.grade_id}/reanalyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructor_feedback: editFeedback }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.rubric_scores?.length) {
+        setEditRubrics(data.rubric_scores)
+        const total = data.rubric_scores.reduce((a: number, r: RubricScore) => a + r.score, 0)
+        setEditScore(String(total))
+      }
+      if (data.feedback_short) setEditFeedback(data.feedback_short)
+    } finally {
+      setReanalyzing(false)
+    }
   }
 
   // andPublish: true면 학생에게 공지도 함께
@@ -145,21 +196,32 @@ export default function GradingTable({ assignmentId }: Props) {
     if (!modal || !modal.grade_id) return
     setSaving(true)
     try {
+      // 점수 파싱: parseInt가 NaN이면 AI 점수로 폴백 (0점도 유효한 값으로 처리)
+      const parsed = parseInt(editScore, 10)
+      const confirmedScore = !isNaN(parsed) ? parsed : (modal.ai_score ?? 0)
+
       const res = await fetch(`/api/grades/${modal.grade_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          confirmed_score: parseInt(editScore) || modal.ai_score,
+          confirmed_score: confirmedScore,
           feedback_short: editFeedback,
+          // 교수가 수정한 루브릭별 점수·근거를 함께 저장 (학생에게 전달됨)
+          rubric_scores: editRubrics.length > 0 ? editRubrics : undefined,
           status: 'confirmed',
           ...(andPublish ? { publish: true } : {}),
         }),
       })
       if (res.ok) {
-        const newScore = parseInt(editScore) || modal.ai_score
         setSubmissions(prev => prev.map(s =>
           s.id === modal.id
-            ? { ...s, confirmed_score: newScore, feedback_short: editFeedback, grade_status: 'confirmed', is_published: andPublish ? 1 : s.is_published }
+            ? {
+                ...s,
+                confirmed_score: confirmedScore,
+                feedback_short: editFeedback,
+                grade_status: 'confirmed',
+                is_published: andPublish ? 1 : s.is_published,
+              }
             : s
         ))
         setModal(null)
@@ -169,7 +231,9 @@ export default function GradingTable({ assignmentId }: Props) {
     }
   }
 
-  // 일괄 공지: 미공지 항목 전체 저장 + 공지
+  // 일괄 승인: 미공지 항목 전체를 확정(Finalize) 후 학생에게 공지
+  // · 교수가 이미 수동으로 확정한 점수(confirmed_score)가 있으면 그 값을 우선 사용
+  // · 피드백도 교수가 수정한 내용이 있으면 DB에 이미 반영되어 있으므로 null 전달 → COALESCE로 보존
   const bulkPublish = async () => {
     const targets = submissions.filter(s => s.grade_id && s.is_published !== 1)
     if (targets.length === 0) return
@@ -177,7 +241,12 @@ export default function GradingTable({ assignmentId }: Props) {
       fetch(`/api/grades/${s.grade_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmed_score: s.ai_score, status: 'confirmed', publish: true }),
+        body: JSON.stringify({
+          // 교수가 직접 확정한 점수가 있으면 그대로, 없으면 AI 점수 사용
+          confirmed_score: s.confirmed_score ?? s.ai_score,
+          status: 'confirmed',
+          publish: true,
+        }),
       })
     ))
     setSubmissions(prev => prev.map(s =>
@@ -220,7 +289,7 @@ export default function GradingTable({ assignmentId }: Props) {
               </Button>
               {submissions.length > 0 && (
                 <Button variant="primary" size="sm" onClick={bulkPublish}>
-                  <Bell size={13} /> 전체 공지
+                  <CheckCircle2 size={13} /> 일괄 승인
                 </Button>
               )}
             </div>
@@ -355,28 +424,55 @@ export default function GradingTable({ assignmentId }: Props) {
               </div>
             </div>
 
-            {modal.rubric_scores && (
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
-                <div className="text-xs font-700 text-slate-500 mb-2">루브릭별 AI 점수</div>
-                {modal.rubric_scores.map((r, i) => (
-                  <div key={i} className="space-y-0.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-600 truncate flex-1">{r.rubric_text}</span>
-                      <span className={`font-700 ml-2 flex-shrink-0 ${r.score === r.max_pts ? 'text-emerald-600' : r.score >= r.max_pts * 0.8 ? 'text-indigo-600' : 'text-amber-600'}`}>
-                        {r.score}/{r.max_pts}
-                      </span>
-                    </div>
-                    {r.reason && <p className="text-xs text-slate-400 pl-1 leading-snug">{r.reason}</p>}
+            {/* ── 루브릭별 점수 편집 영역 ── */}
+            {editRubrics.length > 0 && (
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+                  <div className="flex items-center gap-1.5">
+                    <Edit3 size={12} className="text-indigo-500" />
+                    <span className="text-xs font-700 text-slate-700">루브릭별 점수 검토 및 수정</span>
                   </div>
-                ))}
+                  <span className="text-xs font-700 text-indigo-600">
+                    합계: {editRubrics.reduce((a, r) => a + r.score, 0)}점
+                  </span>
+                </div>
+                <div className="p-3 space-y-2.5 bg-white">
+                  {editRubrics.map((r, i) => (
+                    <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+                      {/* 루브릭 항목명 + 점수 입력 */}
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-600 text-slate-700 flex-1 leading-snug">{r.rubric_text}</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <input
+                            type="number"
+                            min={0}
+                            max={r.max_pts}
+                            value={r.score}
+                            onChange={e => updateRubricScore(i, parseInt(e.target.value, 10) || 0)}
+                            className="w-14 px-2 py-1 text-sm font-700 text-center border border-indigo-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 text-indigo-700"
+                          />
+                          <span className="text-xs text-slate-400 whitespace-nowrap">/ {r.max_pts}점</span>
+                        </div>
+                      </div>
+                      {/* 평가 근거 편집 */}
+                      <textarea
+                        value={r.reason}
+                        onChange={e => updateRubricReason(i, e.target.value)}
+                        rows={2}
+                        placeholder="평가 근거를 입력하세요..."
+                        className="w-full text-xs text-slate-600 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300 leading-relaxed"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            {parseInt(editScore) - (modal.ai_score ?? 0) !== 0 && editScore && (
+            {parseInt(editScore, 10) - (modal.ai_score ?? 0) !== 0 && editScore && (
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <AlertCircle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-amber-700">
-                  AI 점수와 {Math.abs(parseInt(editScore) - (modal.ai_score ?? 0))}점 차이가 납니다.
+                  AI 원점수와 {Math.abs(parseInt(editScore, 10) - (modal.ai_score ?? 0))}점 차이가 납니다.
                 </p>
               </div>
             )}
@@ -388,14 +484,31 @@ export default function GradingTable({ assignmentId }: Props) {
               </div>
             )}
 
+            {/* ── 피드백 편집 + AI 재분석 ── */}
             <div>
-              <label className="block text-xs font-600 text-slate-500 mb-1.5">AI 피드백 (수정 가능)</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-600 text-slate-500">교수 피드백 (수정 가능)</label>
+                <button
+                  onClick={handleReanalyze}
+                  disabled={reanalyzing || !editFeedback.trim()}
+                  className="flex items-center gap-1 text-xs font-600 text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {reanalyzing
+                    ? <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                    : <Sparkles size={11} />}
+                  AI로 루브릭 재분석
+                </button>
+              </div>
               <textarea
                 value={editFeedback}
                 onChange={e => setEditFeedback(e.target.value)}
                 rows={4}
+                placeholder="피드백 내용을 입력 후 'AI로 루브릭 재분석'을 클릭하면 루브릭별 점수가 자동 조정됩니다."
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 text-slate-700 leading-relaxed resize-none"
               />
+              <p className="text-xs text-slate-400 mt-1">
+                피드백을 입력하고 재분석하면 AI가 루브릭별 점수와 근거를 자동으로 조정합니다. 저장 시 변경된 내용이 학생에게 전달됩니다.
+              </p>
             </div>
           </div>
         )}

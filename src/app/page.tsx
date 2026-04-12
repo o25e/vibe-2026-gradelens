@@ -33,6 +33,9 @@ interface AssignmentItem {
   deadline: string
   created_at: string
   is_active: number
+  // 교수 모드 전용: API가 반환하는 제출 현황 카운트
+  sub_total?: number
+  sub_published?: number
 }
 
 interface Notification {
@@ -165,6 +168,97 @@ function NotificationBell({ onNavigate }: { onNavigate?: (assignmentId: string) 
 }
 
 // ── Instructor Assignment List ────────────────────────────────────────────────
+// 완료 조건: 제출이 1개 이상 존재하고 전체가 공지(is_published=1) 처리된 과제
+function isCompleted(a: AssignmentItem): boolean {
+  return (a.sub_total ?? 0) > 0 && a.sub_total === a.sub_published
+}
+
+function AssignmentCard({
+  a, idx, onSelect, onDeleted, completed,
+}: {
+  a: AssignmentItem; idx: number
+  onSelect: (a: AssignmentItem) => void
+  onDeleted: () => void
+  completed: boolean
+}) {
+  const deadline = new Date(a.deadline)
+  const now = new Date()
+  const isPast = now > deadline
+  const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
+  const subTotal = a.sub_total ?? 0
+  const subPublished = a.sub_published ?? 0
+  const subPending = subTotal - subPublished
+
+  return (
+    <div
+      onClick={() => onSelect(a)}
+      className={`bg-white border rounded-xl px-5 py-4 flex items-center justify-between cursor-pointer hover:shadow-sm transition-all ${
+        completed
+          ? 'border-emerald-200 hover:border-emerald-300 opacity-75'
+          : 'border-slate-200 hover:border-indigo-300'
+      }`}
+    >
+      <div className="flex items-center gap-4 flex-1 min-w-0">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${completed ? 'bg-emerald-50' : 'bg-indigo-50'}`}>
+          <span className={`text-sm font-800 ${completed ? 'text-emerald-600' : 'text-indigo-600'}`}>{idx + 1}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-700 text-slate-800 truncate">{a.title}</span>
+            {completed ? (
+              <span className="text-xs font-600 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                성적 공지 완료
+              </span>
+            ) : subTotal === 0 ? (
+              <span className="text-xs font-600 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                제출 없음
+              </span>
+            ) : (
+              <span className="text-xs font-600 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                검토 대기 {subPending}명
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+            <span>{a.course}</span>
+            <span>·</span>
+            <Clock size={10} className="inline" />
+            <span>
+              {isPast
+                ? `마감 ${deadline.toLocaleDateString('ko-KR')}`
+                : hoursLeft < 24 ? `${hoursLeft}시간 남음` : `D-${Math.ceil(hoursLeft / 24)}`}
+            </span>
+            {subTotal > 0 && (
+              <>
+                <span>·</span>
+                <span>제출 {subTotal}명</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 ml-4" onClick={e => e.stopPropagation()}>
+        <button
+          onClick={() => {
+            if (confirm(`"${a.title}" 과제를 삭제할까요?\n모든 제출물과 성적도 함께 삭제됩니다.`)) {
+              fetch(`/api/assignments/${a.id}`, { method: 'DELETE' })
+                .then(r => r.ok && onDeleted())
+            }
+          }}
+          className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+          title="과제 삭제"
+        >
+          <Trash2 size={13} />
+        </button>
+        <span className={`text-xs font-600 ${completed ? 'text-emerald-600' : 'text-indigo-600'}`}>
+          {completed ? '결과 확인 →' : '채점 관리 →'}
+        </span>
+        <ChevronRight size={14} className="text-slate-300" />
+      </div>
+    </div>
+  )
+}
+
 function InstructorAssignmentList({
   assignments,
   onSelect,
@@ -176,8 +270,13 @@ function InstructorAssignmentList({
   onCreateNew: () => void
   onDeleted: () => void
 }) {
+  // 검토 대기: 미완료 과제 (제출 없음 포함)
+  const pending = assignments.filter(a => !isCompleted(a))
+  // 완료: 전체 공지 처리된 과제
+  const completed = assignments.filter(a => isCompleted(a))
+
   return (
-    <div className="space-y-4 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-700 text-slate-800">과제 목록</h2>
@@ -200,61 +299,61 @@ function InstructorAssignmentList({
           </button>
         </div>
       ) : (
-        <div className="space-y-2.5">
-          {assignments.map((a, idx) => {
-            const deadline = new Date(a.deadline)
-            const now = new Date()
-            const isPast = now > deadline
-            const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
-            return (
-              <div
-                key={a.id}
-                onClick={() => onSelect(a)}
-                className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center justify-between cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all"
-              >
-                <div className="flex items-center gap-4 flex-1 min-w-0">
-                  <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-800 text-indigo-600">{idx + 1}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-700 text-slate-800 truncate">{a.title}</span>
-                      <span className={`text-xs font-600 px-2 py-0.5 rounded-full ${isPast ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                        {isPast ? '마감됨' : '진행 중'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
-                      <span>{a.course}</span>
-                      <span>·</span>
-                      <Clock size={10} className="inline" />
-                      <span>
-                        {isPast
-                          ? `마감 ${new Date(a.deadline).toLocaleDateString('ko-KR')}`
-                          : hoursLeft < 24 ? `${hoursLeft}시간 남음` : `D-${Math.ceil(hoursLeft / 24)}`}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 ml-4" onClick={e => e.stopPropagation()}>
-                  <button
-                    onClick={() => {
-                      if (confirm(`"${a.title}" 과제를 삭제할까요?\n모든 제출물과 성적도 함께 삭제됩니다.`)) {
-                        fetch(`/api/assignments/${a.id}`, { method: 'DELETE' })
-                          .then(r => r.ok && onDeleted())
-                      }
-                    }}
-                    className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                    title="과제 삭제"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                  <span className="text-xs text-indigo-600 font-600">채점 관리 →</span>
-                  <ChevronRight size={14} className="text-slate-300" />
-                </div>
+        <>
+          {/* ── 검토 대기 목록 ── */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-amber-400" />
+              <span className="text-sm font-700 text-slate-700">검토 대기</span>
+              <span className="text-xs text-slate-400">— AI 1차 피드백 이후 최종 검토가 필요한 과제</span>
+              {pending.length > 0 && (
+                <span className="ml-auto text-xs font-700 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                  {pending.length}건
+                </span>
+              )}
+            </div>
+            {pending.length === 0 ? (
+              <div className="flex items-center justify-center h-20 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-sm">
+                검토 대기 중인 과제가 없습니다
               </div>
-            )
-          })}
-        </div>
+            ) : (
+              <div className="space-y-2.5">
+                {pending.map((a, idx) => (
+                  <AssignmentCard
+                    key={a.id} a={a} idx={idx}
+                    onSelect={onSelect} onDeleted={onDeleted} completed={false}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* ── 구분선 + 완료 목록 ── */}
+          {completed.length > 0 && (
+            <section>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex-1 h-px bg-slate-200" />
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span className="text-sm font-700 text-slate-700">완료</span>
+                  <span className="text-xs text-slate-400">— 최종 승인 및 성적 공지 완료</span>
+                  <span className="text-xs font-700 bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                    {completed.length}건
+                  </span>
+                </div>
+                <div className="flex-1 h-px bg-slate-200" />
+              </div>
+              <div className="space-y-2.5">
+                {completed.map((a, idx) => (
+                  <AssignmentCard
+                    key={a.id} a={a} idx={idx}
+                    onSelect={onSelect} onDeleted={onDeleted} completed
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   )

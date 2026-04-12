@@ -21,13 +21,29 @@ export async function GET(req: NextRequest) {
       .all()
   }
 
-  // Attach rubric items to each assignment
-  const assignments = (rows as Record<string, unknown>[]).map((a) => ({
-    ...a,
-    rubric_items: db
-      .prepare('SELECT * FROM rubric_items WHERE assignment_id = ? ORDER BY sort_order')
-      .all(a.id as string),
-  }))
+  // 루브릭 및 (교수 전용) 제출 현황 카운트 첨부
+  const subCountStmt = db.prepare(`
+    SELECT
+      COUNT(s.id)                                                                AS sub_total,
+      COALESCE(SUM(CASE WHEN g.is_published = 1 THEN 1 ELSE 0 END), 0)         AS sub_published
+    FROM submissions s
+    LEFT JOIN grades g ON g.submission_id = s.id
+    WHERE s.assignment_id = ?
+  `)
+
+  const assignments = (rows as Record<string, unknown>[]).map((a) => {
+    const base = {
+      ...a,
+      rubric_items: db
+        .prepare('SELECT * FROM rubric_items WHERE assignment_id = ? ORDER BY sort_order')
+        .all(a.id as string),
+    }
+    if (session.role === 'instructor') {
+      const counts = subCountStmt.get(a.id as string) as { sub_total: number; sub_published: number }
+      return { ...base, sub_total: counts.sub_total, sub_published: counts.sub_published }
+    }
+    return base
+  })
 
   return NextResponse.json({ assignments })
 }
