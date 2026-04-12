@@ -129,15 +129,15 @@ export default function StudentInquiries({
       const data = await res.json()
       const fetched: StudentThread[] = data.threads ?? []
       setThreads(fetched)
-      // 선택된 스레드 동기화
-      if (selected) {
-        const updated = fetched.find(t => t.studentUserId === selected.studentUserId)
-        if (updated) setSelected(updated)
-      }
+      // 선택된 스레드 동기화 (함수형 업데이트로 selected 의존성 제거)
+      setSelected(prev => {
+        if (!prev) return null
+        return fetched.find(t => t.studentUserId === prev.studentUserId) ?? prev
+      })
     } finally {
       setLoading(false)
     }
-  }, [selected])
+  }, [])
 
   // 알림 클릭으로 특정 학생 지정 시 자동 선택
   useEffect(() => {
