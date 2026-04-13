@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getRequiredEnv } from '@/lib/env'
 
 export interface SessionPayload {
   id: string
@@ -14,7 +15,7 @@ export interface SessionPayload {
 export const COOKIE_NAME = 'gradelens_session'
 
 const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? 'gradelens-secret-key-please-change-in-production'
+  getRequiredEnv('JWT_SECRET')
 )
 
 const COOKIE_OPTIONS = {

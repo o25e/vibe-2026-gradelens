@@ -1,3 +1,4 @@
+import { getOptionalEnv } from '@/lib/env'
 
 export interface RubricItem {
   text: string
@@ -109,7 +110,7 @@ function simulateGrading(input: GradingInput): GradingResult {
 
 // ── Python AI Agent 호출 (GRADING_AGENT_URL 환경변수 설정 시) ────────────────
 async function gradeViaAgent(input: GradingInput): Promise<GradingResult | null> {
-  const agentUrl = process.env.GRADING_AGENT_URL
+  const agentUrl = getOptionalEnv('GRADING_AGENT_URL')
   if (!agentUrl) return null
 
   const rubricText = input.rubricItems
@@ -170,7 +171,7 @@ export async function gradeSubmission(input: GradingInput): Promise<GradingResul
   if (agentResult) return agentResult
 
   // 2순위: Groq 직접 호출 (GROQ_API_KEY 설정 시)
-  const apiKey = process.env.GROQ_API_KEY
+  const apiKey = getOptionalEnv('GROQ_API_KEY')
   console.log('[grading] GROQ_API_KEY 상태:', apiKey ? `설정됨 (${apiKey.slice(0, 8)}...)` : '없음 — 시뮬레이션 사용')
   if (!apiKey) {
     return simulateGrading(input)

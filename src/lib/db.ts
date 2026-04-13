@@ -2,8 +2,10 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 
-const DATA_DIR = path.join(process.cwd(), 'data')
-const DB_PATH = path.join(DATA_DIR, 'gradelens.db')
+const runtimeDbPath = process.env.SQLITE_DB_PATH?.trim()
+const isVercel = process.env.VERCEL === '1'
+const DB_PATH = runtimeDbPath || (isVercel ? '/tmp/gradelens.db' : path.join(process.cwd(), 'data', 'gradelens.db'))
+const DATA_DIR = path.dirname(DB_PATH)
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true })

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
+import { getOptionalEnv } from '@/lib/env'
 
 const SYSTEM_PROMPT = `당신은 GradeLens의 AI 성적 문의 어시스턴트입니다.
 대학교 과제 채점, 루브릭 기준, 피드백, 성적 향상 방법에 대해 친절하고 전문적으로 안내합니다.
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Message required' }, { status: 400 })
   }
 
-  const apiKey = process.env.GROQ_API_KEY
+  const apiKey = getOptionalEnv('GROQ_API_KEY')
   if (!apiKey) {
     return NextResponse.json({ reply: getRuleBasedResponse(message) })
   }

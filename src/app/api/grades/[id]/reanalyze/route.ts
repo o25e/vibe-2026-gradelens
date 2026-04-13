@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { getSession } from '@/lib/session'
+import { getOptionalEnv } from '@/lib/env'
 
 interface RubricScore {
   rubric_text: string
@@ -15,7 +16,7 @@ async function reanalyzeWithGroq(
   currentRubrics: RubricScore[],
   submissionText: string,
 ): Promise<{ rubric_scores: RubricScore[]; feedback_short: string; isRateLimit?: boolean } | null> {
-  const apiKey = process.env.GROQ_API_KEY
+  const apiKey = getOptionalEnv('GROQ_API_KEY')
   if (!apiKey) return null
 
   // 현재 루브릭 점수 현황 텍스트

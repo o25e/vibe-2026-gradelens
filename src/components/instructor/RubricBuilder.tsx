@@ -51,7 +51,11 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
   const addRubric = () => {
     if (!newText.trim()) return
     const id = Date.now()
-    setManualIds(prev => new Set([...prev, id]))
+    setManualIds(prev => {
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
     setRubrics(r => [...r, { id, text: newText.trim(), pts: parseInt(newPts) || 10, category: 'logic' }])
     setNewText(''); setNewPts('')
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
+import { getOptionalEnv } from '@/lib/env'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface AIRubricItem {
@@ -196,7 +197,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '총점은 1~1000 사이 정수여야 합니다.' }, { status: 400 })
   }
 
-  const apiKey = process.env.GROQ_API_KEY
+  const apiKey = getOptionalEnv('GROQ_API_KEY')
   if (!apiKey) {
     console.log('[rubric-generate] GROQ_API_KEY 없음 — 규칙 기반 루브릭 생성')
     const rubrics = buildFallbackRubrics(totalScore, assignmentTitle || '', fileName || '')
