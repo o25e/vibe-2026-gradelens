@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
-import { TrendingUp, BookOpen, CheckCircle2, ArrowRight, Target, RefreshCw, FileText, Clock, ChevronLeft } from 'lucide-react'
+import { TrendingUp, BookOpen, CheckCircle2, ArrowRight, Target, RefreshCw, FileText, Clock, ChevronLeft, Download, Paperclip } from 'lucide-react'
 import { Card, CardHeader, Badge, ProgressBar, Avatar, Button } from '@/components/ui'
 import { ASSIGNMENT_HISTORY } from '@/lib/mockData'
 import type { AuthUser } from '@/lib/auth'
@@ -31,6 +31,7 @@ interface Submission {
   course: string
   submitted_at: string
   word_count: number
+  file_name: string | null
   ai_score: number | null
   confirmed_score: number | null
   grade_status: string
@@ -39,6 +40,13 @@ interface Submission {
   radar_scores: RadarScores | null
   section1_summary: string | null
   section2_items: Section2Item[] | null
+}
+
+interface AssignmentInfo {
+  id: string
+  title: string
+  description: string
+  guideline_file_name: string | null
 }
 
 const METRIC_COLORS: Record<string, string> = {
@@ -66,6 +74,7 @@ export default function GradeReport({
   onBack?: () => void
 }) {
   const [submission, setSubmission] = useState<Submission | null>(null)
+  const [assignmentInfo, setAssignmentInfo] = useState<AssignmentInfo | null>(null)
   const [cuts, setCuts] = useState<GradeCuts>(DEFAULT_CUTS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -86,14 +95,26 @@ export default function GradeReport({
       }
       setSubmission(found)
 
-      // 해당 과제의 등급 컷오프 설정 불러오기
+      // 해당 과제의 등급 컷오프 설정 + 과제 상세 불러오기
       const targetAssignmentId = assignmentId ?? found?.assignment_id
       if (targetAssignmentId) {
-        const settingsRes = await fetch(`/api/grade-settings?assignment_id=${targetAssignmentId}`, { cache: 'no-store' })
+        const [settingsRes, assignRes] = await Promise.all([
+          fetch(`/api/grade-settings?assignment_id=${targetAssignmentId}`, { cache: 'no-store' }),
+          fetch(`/api/assignments/${targetAssignmentId}`, { cache: 'no-store' }),
+        ])
         if (settingsRes.ok) {
           const { cuts: savedCuts } = await settingsRes.json()
           if (savedCuts) setCuts(savedCuts)
           else setCuts(DEFAULT_CUTS)
+        }
+        if (assignRes.ok) {
+          const { assignment } = await assignRes.json()
+          if (assignment) setAssignmentInfo({
+            id: assignment.id,
+            title: assignment.title,
+            description: assignment.description,
+            guideline_file_name: assignment.guideline_file_name ?? null,
+          })
         }
       }
     } catch {
@@ -223,10 +244,90 @@ export default function GradeReport({
     ? Math.round(Object.values(radar).reduce((a, v) => a + v, 0) / Object.values(radar).length)
     : 0
 
+  // 제출 시간 포맷 (예: 2025년 6월 5일 오후 6:31)
+  const formattedSubmittedAt = submission?.submitted_at
+    ? new Date(submission.submitted_at).toLocaleString('ko-KR', {
+        year: 'numeric', month: 'long', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true,
+      })
+    : null
+
   return (
     <div className="space-y-4">
       {/* 뒤로가기 */}
       {BackButton}
+
+      {/* 과제 안내 + 학생 제출 정보 */}
+      {(assignmentInfo || submission?.file_name) && (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          {/* 과제 설명 & 가이드라인 */}
+          {assignmentInfo && (
+            <div className="px-5 py-4 border-b border-slate-100">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <FileText size={13} className="text-indigo-500 flex-shrink-0" />
+                    <span className="text-xs font-700 text-slate-500 uppercase tracking-wide">과제 안내</span>
+                  </div>
+                  <p className="text-sm font-700 text-slate-800 mb-1">{assignmentInfo.title}</p>
+                  {assignmentInfo.description && (
+                    <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{assignmentInfo.description}</p>
+                  )}
+                </div>
+                {assignmentInfo.guideline_file_name && (
+                  <a
+                    href={`/api/assignments/${assignmentInfo.id}/guideline`}
+                    download={assignmentInfo.guideline_file_name}
+                    className="flex items-center gap-1.5 text-xs font-600 text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                  >
+                    <Download size={11} />
+                    가이드라인
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 학생 제출 파일 + 시간 */}
+          {submission?.file_name && (
+            <div className="px-5 py-3.5 bg-slate-50">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 bg-white border border-slate-200 rounded-md flex items-center justify-center flex-shrink-0">
+                    <Paperclip size={12} className="text-indigo-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-600 text-slate-700 truncate">{submission.file_name}</div>
+                    <div className="text-xs text-slate-400">내가 제출한 파일</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {formattedSubmittedAt && (
+                    <div className="flex items-center gap-1 text-xs text-slate-400">
+                      <Clock size={10} />
+                      <span>{formattedSubmittedAt} 제출</span>
+                    </div>
+                  )}
+                  <a
+                    href={`/api/submissions/${submission.id}/file`}
+                    download={submission.file_name}
+                    className="flex items-center gap-1 text-xs font-600 text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded px-2 py-1 transition-colors"
+                  >
+                    <Download size={11} /><span>다운로드</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* 파일 없는 경우 제출 시간만 */}
+          {!submission?.file_name && formattedSubmittedAt && (
+            <div className="px-5 py-3 bg-slate-50 flex items-center gap-1.5 text-xs text-slate-400">
+              <Clock size={10} />
+              <span>{formattedSubmittedAt} 제출</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Hero Score Card */}
       <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-6 text-white relative overflow-hidden">

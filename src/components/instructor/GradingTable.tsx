@@ -8,6 +8,13 @@ import { Button, Card, CardHeader, Badge, Avatar, Modal, StatCard } from '@/comp
 
 type GradeStatus = 'confirmed' | 'pending' | 'flagged'
 
+interface AssignmentInfo {
+  id: string
+  title: string
+  description: string
+  guideline_file_name: string | null
+}
+
 interface RubricScore {
   rubric_text: string
   max_pts: number
@@ -124,6 +131,7 @@ interface Props { assignmentId?: string }
 
 export default function GradingTable({ assignmentId }: Props) {
   const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [assignmentInfo, setAssignmentInfo] = useState<AssignmentInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState<Submission | null>(null)
   const [editFeedback, setEditFeedback] = useState('')
@@ -144,6 +152,21 @@ export default function GradingTable({ assignmentId }: Props) {
     } finally {
       setLoading(false)
     }
+  }, [assignmentId])
+
+  useEffect(() => {
+    if (!assignmentId) { setAssignmentInfo(null); return }
+    fetch(`/api/assignments/${assignmentId}`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.assignment) setAssignmentInfo({
+          id: data.assignment.id,
+          title: data.assignment.title,
+          description: data.assignment.description,
+          guideline_file_name: data.assignment.guideline_file_name ?? null,
+        })
+      })
+      .catch(() => {})
   }, [assignmentId])
 
   useEffect(() => { fetchSubmissions() }, [fetchSubmissions])
@@ -282,6 +305,34 @@ export default function GradingTable({ assignmentId }: Props) {
 
   return (
     <>
+      {/* 과제 안내 패널 */}
+      {assignmentInfo && (
+        <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4 flex items-start gap-4">
+          <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
+            <FileText size={16} className="text-indigo-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-700 text-slate-400 uppercase tracking-wide">등록한 과제</span>
+            </div>
+            <div className="text-sm font-700 text-slate-800 mb-1">{assignmentInfo.title}</div>
+            {assignmentInfo.description && (
+              <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{assignmentInfo.description}</p>
+            )}
+          </div>
+          {assignmentInfo.guideline_file_name && (
+            <a
+              href={`/api/assignments/${assignmentInfo.id}/guideline`}
+              download={assignmentInfo.guideline_file_name}
+              className="flex items-center gap-1.5 text-xs font-600 text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+            >
+              <Download size={11} />
+              <span>가이드라인</span>
+            </a>
+          )}
+        </div>
+      )}
+
       <Card>
         <CardHeader
           title="AI 자동 채점 현황 및 교수 검토"
