@@ -838,22 +838,105 @@ function StudentCourseList({
   )
 }
 
+// ── Create Course Modal ───────────────────────────────────────────────────────
+type CreatedCourse = { name: string; year: number; semester: number }
+
+function CreateCourseModal({ onClose, onCreate }: {
+  onClose: () => void
+  onCreate: (course: CreatedCourse) => void
+}) {
+  const [name, setName] = useState('')
+  const [year, setYear] = useState(2026)
+  const [semester, setSemester] = useState(1)
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    onCreate({ name: name.trim(), year, semester })
+    onClose()
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
+        <h2 className="text-base font-700 text-slate-800 mb-4">강의 추가</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-600 text-slate-600 mb-1">강의명</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="예) 데이터베이스 설계"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-600 text-slate-600 mb-1">년도</label>
+              <select
+                value={year}
+                onChange={e => setYear(Number(e.target.value))}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              >
+                {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-600 text-slate-600 mb-1">학기</label>
+              <select
+                value={semester}
+                onChange={e => setSemester(Number(e.target.value))}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              >
+                <option value={1}>1학기</option>
+                <option value={2}>2학기</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors">
+              취소
+            </button>
+            <button type="submit"
+              className="px-4 py-2 bg-indigo-600 text-white text-sm font-600 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40"
+              disabled={!name.trim()}>
+              강의 만들기
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Instructor Course List (full-page, LMS style) ─────────────────────────────
 function InstructorCourseListPage({
   assignments,
+  createdCourses,
   onSelectCourse,
   onCreateNew,
+  onAddCourse,
 }: {
   assignments: AssignmentItem[]
+  createdCourses: CreatedCourse[]
   onSelectCourse: (course: string) => void
   onCreateNew: () => void
+  onAddCourse: (course: CreatedCourse) => void
 }) {
-  type CourseEntry = { total: number; subTotal: number; subPublished: number; pendingReview: number }
+  const [showModal, setShowModal] = useState(false)
+  type CourseEntry = { total: number; subTotal: number; subPublished: number; pendingReview: number; year: number; semester: number }
   const courseMap = new Map<string, CourseEntry>()
+
+  // 생성된 강의 먼저 등록
+  for (const c of createdCourses) {
+    if (!courseMap.has(c.name)) {
+      courseMap.set(c.name, { total: 0, subTotal: 0, subPublished: 0, pendingReview: 0, year: c.year, semester: c.semester })
+    }
+  }
 
   for (const a of assignments) {
     if (!courseMap.has(a.course)) {
-      courseMap.set(a.course, { total: 0, subTotal: 0, subPublished: 0, pendingReview: 0 })
+      courseMap.set(a.course, { total: 0, subTotal: 0, subPublished: 0, pendingReview: 0, year: 2026, semester: 1 })
     }
     const e = courseMap.get(a.course)!
     e.total++
@@ -868,30 +951,41 @@ function InstructorCourseListPage({
 
   if (courses.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4 text-slate-400 w-full">
-        <BookOpen size={36} className="opacity-30" />
-        <p className="text-sm">등록된 강의가 없습니다.</p>
-        <button
-          onClick={onCreateNew}
-          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-600 rounded-xl hover:bg-indigo-700 transition-colors"
-        >
-          <Plus size={14} /> 첫 번째 과제 만들기
-        </button>
-      </div>
+      <>
+        {showModal && <CreateCourseModal onClose={() => setShowModal(false)} onCreate={c => { onAddCourse(c); onSelectCourse(c.name) }} />}
+        <div className="flex flex-col items-center justify-center h-64 gap-4 text-slate-400 w-full">
+          <BookOpen size={36} className="opacity-30" />
+          <p className="text-sm">등록된 강의가 없습니다.</p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-600 rounded-xl hover:bg-indigo-700 transition-colors"
+          >
+            <Plus size={14} /> 강의 추가
+          </button>
+        </div>
+      </>
     )
   }
 
   return (
+    <>
+      {showModal && <CreateCourseModal onClose={() => setShowModal(false)} onCreate={c => { onAddCourse(c); onSelectCourse(c.name) }} />}
     <div className="w-full space-y-0">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-base font-700 text-slate-800">나의 강의</h2>
           <p className="text-xs text-slate-400">강의를 선택하여 과제를 관리하세요</p>
         </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-600 rounded-xl hover:bg-indigo-700 transition-colors"
+        >
+          <Plus size={13} /> 강의 추가
+        </button>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
-        {courses.map(([course, { total, subTotal, subPublished, pendingReview }]) => (
+        {courses.map(([course, { total, subTotal, subPublished, pendingReview, year, semester }]) => (
           <div
             key={course}
             className="flex items-center gap-5 px-6 py-5 hover:bg-slate-50 transition-colors group cursor-pointer"
@@ -906,7 +1000,7 @@ function InstructorCourseListPage({
             <div className="flex-1 min-w-0">
               <div className="text-sm font-700 text-slate-800 truncate">{course}</div>
               <div className="text-xs text-slate-400 mt-0.5">
-                2026년 1학기
+                {year}년 {semester}학기
                 {pendingReview > 0 && (
                   <span className="ml-2 inline-flex items-center text-[10px] font-700 bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded-full">
                     검토 대기 {pendingReview}건
@@ -942,6 +1036,7 @@ function InstructorCourseListPage({
         ))}
       </div>
     </div>
+    </>
   )
 }
 
@@ -1350,6 +1445,7 @@ export default function Dashboard() {
   const [inquiryUnread, setInquiryUnread] = useState(0)
   const [inquiryTargetStudent, setInquiryTargetStudent] = useState<string | null>(null)
   const [chatBotOpen, setChatBotOpen] = useState(false)
+  const [createdCourses, setCreatedCourses] = useState<CreatedCourse[]>([])
 
   useEffect(() => {
     getCurrentUser().then(currentUser => {
@@ -1549,6 +1645,7 @@ export default function Dashboard() {
           {view === 'instructor' && instructorSection === 'courses' && !instructorSelectedCourse && (
             <InstructorCourseListPage
               assignments={allAssignments}
+              createdCourses={createdCourses}
               onSelectCourse={course => {
                 handleInstructorCourseSelect(course)
               }}
@@ -1556,6 +1653,10 @@ export default function Dashboard() {
                 setSelectedAssignment(null)
                 setInstructorGradingView('create')
                 setInstructorSelectedCourse('new')
+              }}
+              onAddCourse={c => {
+                setCreatedCourses(prev => [...prev, c])
+                handleInstructorCourseSelect(c.name)
               }}
             />
           )}
