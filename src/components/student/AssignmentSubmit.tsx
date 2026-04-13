@@ -328,10 +328,10 @@ export default function AssignmentSubmit({
         <Card>
           <CardHeader
             title="과제 제출"
-            subtitle={`${user.name} 님의 제출 · AI가 즉시 채점합니다`}
+            subtitle={`${user.name}님의 제출하십시오.`}
             actions={
               <span className="inline-flex items-center gap-1 bg-indigo-600 text-white text-xs font-700 px-2.5 py-1 rounded-full">
-                <Sparkles size={10} /> AI 자동 채점
+                <Sparkles size={10} /> AI 어시스트
               </span>
             }
           />
@@ -353,7 +353,7 @@ export default function AssignmentSubmit({
               onChange={e => setContent(e.target.value)}
               rows={10}
               disabled={submitting}
-              placeholder="과제 내용을 여기에 붙여넣으세요. AI가 채점 기준에 따라 자동 평가합니다."
+              placeholder="과제 내용을 여기에 붙여넣으세요."
               className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white text-slate-700 leading-relaxed resize-none disabled:opacity-60"
             />
             <div className="flex justify-between mt-1 text-xs text-slate-400">
@@ -432,7 +432,7 @@ export default function AssignmentSubmit({
               disabled={!content.trim() || isPast || fileParsing}
             >
               <Sparkles size={14} />
-              {isPast ? '마감된 과제입니다' : 'AI 채점 제출하기'}
+              {isPast ? '마감된 과제입니다' : '과제 제출하기'}
             </Button>
           )}
 
