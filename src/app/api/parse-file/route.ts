@@ -70,7 +70,7 @@ function cleanText(raw: string): string {
 // ── API Handler ────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const session = await getSession(req)
-  if (!session || session.role !== 'instructor') {
+  if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 

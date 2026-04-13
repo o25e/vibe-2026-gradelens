@@ -37,6 +37,8 @@ export default function AssignmentSubmit({
   const [content, setContent] = useState('')
   const [file, setFile] = useState<{ name: string; size: number } | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [fileParsing, setFileParsing] = useState(false)
+  const [fileParseError, setFileParseError] = useState<string | null>(null)
 
   const [submitting, setSubmitting] = useState(false)
   const [gradingMsg, setGradingMsg] = useState(0)
@@ -66,12 +68,33 @@ export default function AssignmentSubmit({
 
   useEffect(() => { fetchAssignments() }, [fetchAssignments])
 
-  const handleFileDrop = (f: File) => {
+  const handleFileDrop = async (f: File) => {
     setFile({ name: f.name, size: f.size })
-    if (f.type === 'text/plain' || f.name.endsWith('.txt')) {
+    setFileParseError(null)
+
+    const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+
+    if (ext === 'txt' || f.type === 'text/plain') {
+      // TXT: 브라우저에서 직접 읽기
       const reader = new FileReader()
       reader.onload = e => setContent(e.target?.result as string ?? '')
       reader.readAsText(f)
+    } else if (['pdf', 'doc', 'docx', 'hwp'].includes(ext)) {
+      // PDF/DOCX/HWP: 서버 parse-file API로 텍스트 추출
+      setFileParsing(true)
+      try {
+        const formData = new FormData()
+        formData.append('file', f)
+        const res = await fetch('/api/parse-file', { method: 'POST', body: formData })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? '파일 파싱에 실패했습니다.')
+        setContent(data.text ?? '')
+      } catch (e) {
+        setFileParseError((e as Error).message)
+        setFile(null)
+      } finally {
+        setFileParsing(false)
+      }
     }
   }
 
@@ -81,6 +104,7 @@ export default function AssignmentSubmit({
     setContent('')
     setFile(null)
     setError(null)
+    setFileParseError(null)
   }
 
   // 목록으로 돌아가기: onBack이 있으면 부모에게 위임, 없으면 내부 목록으로
@@ -93,6 +117,7 @@ export default function AssignmentSubmit({
       setContent('')
       setFile(null)
       setError(null)
+      setFileParseError(null)
     }
   }
 
@@ -334,15 +359,25 @@ export default function AssignmentSubmit({
             <label className="block text-xs font-600 text-slate-500 mb-1.5">
               파일 첨부 <span className="text-slate-400 font-400">(선택 · .txt 파일은 내용 자동 입력)</span>
             </label>
-            {file ? (
+            {fileParseError && (
+              <div className="mb-2 flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
+                <AlertCircle size={13} />{fileParseError}
+              </div>
+            )}
+            {fileParsing ? (
+              <div className="flex items-center gap-2 p-2.5 bg-indigo-50 border border-indigo-100 rounded-lg text-xs text-indigo-600">
+                <div className="w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                파일에서 텍스트 추출 중...
+              </div>
+            ) : file ? (
               <div className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
                 <File size={14} className="text-indigo-500 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-600 text-slate-700 truncate">{file.name}</div>
-                  <div className="text-xs text-slate-400">{(file.size / 1024).toFixed(1)} KB</div>
+                  <div className="text-xs text-slate-400">{(file.size / 1024).toFixed(1)} KB · 텍스트 추출 완료</div>
                 </div>
                 {!submitting && (
-                  <button onClick={() => setFile(null)} className="text-slate-400 hover:text-red-500 transition-colors">
+                  <button onClick={() => { setFile(null); setContent('') }} className="text-slate-400 hover:text-red-500 transition-colors">
                     <X size={13} />
                   </button>
                 )}
@@ -387,7 +422,7 @@ export default function AssignmentSubmit({
             <Button
               onClick={handleSubmit}
               className="w-full justify-center"
-              disabled={!content.trim() || isPast}
+              disabled={!content.trim() || isPast || fileParsing}
             >
               <Sparkles size={14} />
               {isPast ? '마감된 과제입니다' : 'AI 채점 제출하기'}
