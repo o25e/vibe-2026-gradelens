@@ -1,8 +1,8 @@
 'use client'
 import { useState } from 'react'
-import { Plus, Sparkles, CheckCircle2, BookOpen, AlignLeft, Quote, Eye, FileText, X, Send, Wand2, Paperclip } from 'lucide-react'
+import { Plus, CheckCircle2, BookOpen, AlignLeft, Quote, Eye, FileText, X, Send, Wand2, Paperclip } from 'lucide-react'
 import { Button, Card, CardHeader, Badge } from '@/components/ui'
-import { AI_SUGGESTIONS, INITIAL_RUBRICS } from '@/lib/mockData'
+import { INITIAL_RUBRICS } from '@/lib/mockData'
 import type { RubricItem } from '@/lib/mockData'
 import SmartRubricGenerator from './SmartRubricGenerator'
 import type { AIRubricItem } from './SmartRubricGenerator'
@@ -35,8 +35,6 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
   const [deadline, setDeadline] = useState('2026-06-30T23:59')
   const [newText, setNewText] = useState('')
   const [newPts, setNewPts] = useState('')
-  const [suggestionsUsed, setSuggestionsUsed] = useState<number[]>([])
-
   const [showGenerator, setShowGenerator] = useState(false)
 
   const [guidelineFile, setGuidelineFile] = useState<File | null>(null)
@@ -54,11 +52,6 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
   }
 
   const removeRubric = (id: number) => setRubrics(r => r.filter(x => x.id !== id))
-
-  const addSuggestion = (idx: number, s: typeof AI_SUGGESTIONS[0]) => {
-    setSuggestionsUsed(u => [...u, idx])
-    setRubrics(r => [...r, { id: Date.now(), text: s.text, pts: s.pts, category: 'logic' }])
-  }
 
   // AI 생성 루브릭을 기존 목록에 반영
   const handleAiGenerated = (aiRubrics: AIRubricItem[], _aiTotal: number) => {
@@ -279,36 +272,6 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
               <Button onClick={addRubric} size="sm" disabled={!newText.trim()}>
                 <Plus size={13} /> 추가
               </Button>
-            </div>
-          </div>
-
-          {/* AI Suggestions */}
-          <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl p-3.5">
-            <div className="flex items-center gap-1.5 mb-2.5">
-              <span className="inline-flex items-center gap-1 bg-indigo-600 text-white text-xs font-700 px-2.5 py-1 rounded-full">
-                <Sparkles size={10} /> AI 스마트 추천
-              </span>
-              <span className="text-xs text-indigo-500">과제 내용을 분석한 추가 채점 기준</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {AI_SUGGESTIONS.map((s, i) => {
-                const used = suggestionsUsed.includes(i)
-                return (
-                  <button
-                    key={i}
-                    onClick={() => !used && addSuggestion(i, s)}
-                    disabled={used}
-                    className={`inline-flex items-center gap-1 text-xs font-500 px-2.5 py-1.5 rounded-full border transition-all duration-150 ${
-                      used
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-600 cursor-default'
-                        : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-600 hover:text-white hover:border-transparent cursor-pointer'
-                    }`}
-                  >
-                    {used ? <CheckCircle2 size={10} /> : <Plus size={10} />}
-                    {s.text} ({s.pts}점)
-                  </button>
-                )
-              })}
             </div>
           </div>
         </div>
