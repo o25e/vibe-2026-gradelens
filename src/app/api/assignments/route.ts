@@ -4,6 +4,19 @@ import db from '@/lib/db'
 import { getSession } from '@/lib/session'
 import { seedDemoUsers } from '@/lib/seed'
 
+function notifyStudentsNewAssignment(assignmentId: string, title: string, course: string) {
+  const students = db.prepare(`SELECT id FROM users WHERE role = 'student'`).all() as { id: string }[]
+  const insertNotif = db.prepare(`
+    INSERT INTO notifications (id, user_id, type, title, body, assignment_id)
+    VALUES (?, ?, 'new_assignment', ?, ?, ?)
+  `)
+  db.transaction(() => {
+    for (const s of students) {
+      insertNotif.run(randomUUID(), s.id, `새 과제: ${title}`, `[${course}] 새로운 과제가 등록되었습니다.`, assignmentId)
+    }
+  })()
+}
+
 // GET /api/assignments — list assignments (instructor: all theirs; student: active ones)
 export async function GET(req: NextRequest) {
   await seedDemoUsers()
@@ -89,6 +102,8 @@ export async function POST(req: NextRequest) {
       insertRubric.run(randomUUID(), assignmentId, r.text, r.pts, r.category ?? 'logic', i)
     })
   })()
+
+  notifyStudentsNewAssignment(assignmentId, title, course)
 
   const created = db.prepare('SELECT * FROM assignments WHERE id = ?').get(assignmentId) as Record<string, unknown>
   const rubrics = db.prepare('SELECT * FROM rubric_items WHERE assignment_id = ? ORDER BY sort_order').all(assignmentId)

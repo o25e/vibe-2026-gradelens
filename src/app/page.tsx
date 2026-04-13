@@ -76,7 +76,7 @@ function NotificationBell({
   onNavigateInquiry,
   onOpenChatBot,
 }: {
-  onNavigateAssignment?: (assignmentId: string) => void
+  onNavigateAssignment?: (assignmentId: string, type: string) => void
   onNavigateInquiry?: (studentUserId: string) => void
   onOpenChatBot?: () => void
 }) {
@@ -125,8 +125,7 @@ function NotificationBell({
         setOpen(false)
       }
     } else if (n.assignment_id && onNavigateAssignment) {
-      // 학생: 성적 리포트로 이동
-      onNavigateAssignment(n.assignment_id)
+      onNavigateAssignment(n.assignment_id, n.type)
       setOpen(false)
     }
   }
@@ -214,7 +213,7 @@ function NotificationBell({
                         <p className="text-xs text-slate-300">{new Date(n.created_at.replace(' ', 'T') + 'Z').toLocaleString('ko-KR')}</p>
                         {isClickable && (
                           <span className={`text-xs font-600 ${isInquiry ? 'text-red-500' : isProfReply ? 'text-amber-500' : 'text-indigo-500'}`}>
-                            {isInquiry ? '답변하기 →' : isProfReply ? '챗봇 열기 →' : '성적 확인 →'}
+                            {isInquiry ? '답변하기 →' : isProfReply ? '챗봇 열기 →' : n.type === 'new_assignment' ? '과제 확인 →' : '성적 확인 →'}
                           </span>
                         )}
                       </div>
@@ -1283,7 +1282,7 @@ function Topbar({
   onNavigateAssignment, onNavigateInquiry, onOpenChatBot,
 }: {
   section: string; studentView?: StudentView; user: AuthUser
-  onNavigateAssignment?: (assignmentId: string) => void
+  onNavigateAssignment?: (assignmentId: string, type: string) => void
   onNavigateInquiry?: (studentUserId: string) => void
   onOpenChatBot?: () => void
 }) {
@@ -1488,12 +1487,12 @@ export default function Dashboard() {
     setStudentInitialSubmitted(false)
   }
 
-  // 학생 — 알림 클릭 시 해당 과제 성적 리포트로 이동
-  const handleNotificationNavigate = (assignmentId: string) => {
+  // 학생 — 알림 클릭 시 해당 과제로 이동 (new_assignment → 제출 화면, 그 외 → 성적 리포트)
+  const handleNotificationNavigate = (assignmentId: string, type: string) => {
     setStudentSection('assignments')
     setSelectedAssignmentId(assignmentId)
     setStudentInitialSubmitted(false)
-    setStudentView('report')
+    setStudentView(type === 'new_assignment' ? 'submit' : 'report')
     const found = allAssignments.find(a => a.id === assignmentId)
     if (found) {
       setSelectedAssignment(found)
