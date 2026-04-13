@@ -202,7 +202,6 @@ export default function AssignmentSubmit({
               const now = new Date()
               const isPast = now > deadline
               const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
-              const totalPts = a.rubric_items.reduce((s, r) => s + r.pts, 0)
               return (
                 <Card key={a.id}>
                   <div
@@ -222,7 +221,7 @@ export default function AssignmentSubmit({
                           </Badge>
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
-                          {a.course} · {totalPts}점 만점 · 루브릭 {a.rubric_items.length}개
+                          {a.course}
                         </div>
                       </div>
                     </div>
@@ -261,7 +260,6 @@ export default function AssignmentSubmit({
   const now = new Date()
   const isPast = now > deadline
   const hoursLeft = Math.max(0, Math.round((deadline.getTime() - now.getTime()) / 3600000))
-  const totalPts = selectedAssignment.rubric_items.reduce((a, r) => a + r.pts, 0)
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
@@ -298,20 +296,6 @@ export default function AssignmentSubmit({
             <Download size={12} className="text-indigo-400 flex-shrink-0 ml-1" />
           </a>
         )}
-        <div>
-          <div className="text-xs font-700 text-slate-500 mb-2">
-            <Sparkles size={11} className="inline mr-1 text-indigo-500" />
-            AI 채점 기준 ({totalPts}점 만점)
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {selectedAssignment.rubric_items.map(r => (
-              <div key={r.id} className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1.5">
-                <span className="text-xs text-indigo-700 font-500 truncate">{r.text}</span>
-                <span className="text-xs font-800 text-indigo-600 ml-2 flex-shrink-0">{r.pts}점</span>
-              </div>
-            ))}
-          </div>
-        </div>
       </Card>
 
       {/* 제출 완료 → 대기 중 */}
