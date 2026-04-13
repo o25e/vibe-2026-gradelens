@@ -7,7 +7,6 @@ import {
   FileText, LogOut, CheckCircle2, Calendar, Plus, Clock, Trash2,
   RefreshCw, MessageSquare,
 } from 'lucide-react'
-import { MOCK_STUDENTS } from '@/lib/mockData'
 import { getCurrentUser, logout } from '@/lib/auth'
 import type { AuthUser } from '@/lib/auth'
 import RubricBuilder from '@/components/instructor/RubricBuilder'
@@ -18,7 +17,6 @@ import GradeReport from '@/components/student/GradeReport'
 import AssignmentSubmit from '@/components/student/AssignmentSubmit'
 import ChatBot from '@/components/student/ChatBot'
 import { Avatar, Badge, Button, Card } from '@/components/ui'
-import type { Student } from '@/lib/mockData'
 
 type ViewMode = 'instructor' | 'student'
 type InstructorSection = 'courses' | 'inquiries' | 'stats' | 'students' | 'settings'
@@ -1161,12 +1159,12 @@ function SidebarItem({ icon, label, active, onClick, badge }: {
 function Sidebar({
   view, instructorSection, setInstructorSection,
   studentSection, setStudentSection,
-  students, user, onLogout, courseName, inquiryUnread,
+  user, onLogout, courseName, inquiryUnread,
 }: {
   view: ViewMode
   instructorSection: InstructorSection; setInstructorSection: (s: InstructorSection) => void
   studentSection: StudentSection; setStudentSection: (s: StudentSection) => void
-  students: Student[]; user: AuthUser; onLogout: () => void; courseName: string
+  user: AuthUser; onLogout: () => void; courseName: string
   inquiryUnread: number
 }) {
   return (
@@ -1228,16 +1226,7 @@ function Sidebar({
         {view === 'instructor' ? (
           <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
             <div className="text-xs font-700 text-indigo-700 mb-1">현재 과목</div>
-            <div className="text-xs text-indigo-600 leading-snug font-500">{courseName}</div>
-            <div className="text-xs text-indigo-400 mt-1">
-              {students.filter(s => s.status === 'confirmed').length}/{students.length}명 완료
-            </div>
-            <div className="mt-2 bg-indigo-200 rounded-full h-1.5 overflow-hidden">
-              <div
-                className="h-full bg-indigo-600 rounded-full transition-all duration-500"
-                style={{ width: `${students.length ? Math.round(students.filter(s => s.status === 'confirmed').length / students.length * 100) : 0}%` }}
-              />
-            </div>
+            <div className="text-xs text-indigo-600 leading-snug font-500">{courseName || '과목을 선택하세요'}</div>
           </div>
         ) : (
           <div className="bg-violet-50 border border-violet-100 rounded-xl p-3">
@@ -1343,7 +1332,6 @@ export default function Dashboard() {
   const [view, setView] = useState<ViewMode>('student')
   const [instructorSection, setInstructorSection] = useState<InstructorSection>('courses')
   const [studentSection, setStudentSection] = useState<StudentSection>('assignments')
-  const [students] = useState<Student[]>(MOCK_STUDENTS)
 
   // 학생 서브뷰 상태
   const [studentView, setStudentView] = useState<StudentView>('courses')
@@ -1539,7 +1527,6 @@ export default function Dashboard() {
         view={view}
         instructorSection={instructorSection} setInstructorSection={handleSetInstructorSection}
         studentSection={studentSection} setStudentSection={handleSetStudentSection}
-        students={students}
         user={user}
         onLogout={handleLogout}
         courseName={courseName}
