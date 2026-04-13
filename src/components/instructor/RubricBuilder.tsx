@@ -39,6 +39,7 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
 
   const [guidelineFile, setGuidelineFile] = useState<File | null>(null)
 
+  const [maxPts, setMaxPts] = useState(100)
   const [saving, setSaving] = useState(false)
   const [publishedId, setPublishedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -128,8 +129,8 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
         subtitle="AI가 이 기준으로 자동 채점합니다 · 현재 총점 계획"
         actions={
           <div className="flex items-center gap-2">
-            <span className={`text-sm font-700 ${totalPts === 100 ? 'text-emerald-600' : totalPts > 100 ? 'text-red-500' : 'text-amber-600'}`}>
-              {totalPts} / 100점
+            <span className={`text-sm font-700 ${totalPts === maxPts ? 'text-emerald-600' : totalPts > maxPts ? 'text-red-500' : 'text-amber-600'}`}>
+              {totalPts} / {maxPts}점
             </span>
             {publishedId ? (
               <Badge variant="success">
@@ -198,6 +199,16 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white text-slate-800"
               />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-600 text-slate-500 mb-1.5">과제 총점 (만점)</label>
+            <input
+              type="number"
+              min={1}
+              value={maxPts}
+              onChange={e => setMaxPts(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white text-slate-800"
+            />
           </div>
 
           <div>
@@ -314,8 +325,8 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
           {rubrics.length > 0 && (
             <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-center">
               <span className="text-xs text-slate-400">{rubrics.length}개 기준</span>
-              <span className={`text-xs font-700 ${totalPts === 100 ? 'text-emerald-600' : totalPts > 100 ? 'text-red-500' : 'text-amber-600'}`}>
-                합계: {totalPts}점 {totalPts === 100 ? '✓' : totalPts > 100 ? '(초과)' : '(미달)'}
+              <span className={`text-xs font-700 ${totalPts === maxPts ? 'text-emerald-600' : totalPts > maxPts ? 'text-red-500' : 'text-amber-600'}`}>
+                합계: {totalPts}점 {totalPts === maxPts ? '✓' : totalPts > maxPts ? '(초과)' : '(미달)'}
               </span>
             </div>
           )}
