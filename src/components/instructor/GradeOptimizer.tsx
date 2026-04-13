@@ -8,8 +8,8 @@ import { SlidersHorizontal, Save, CheckCircle2, AlertCircle, RefreshCw, Trending
 import { Card, CardHeader, Badge, Button } from '@/components/ui'
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type Grade = 'A+' | 'A' | 'B+' | 'B' | 'C+' | 'C' | 'D' | 'F'
-type Cuts = { 'A+': number; A: number; 'B+': number; B: number; 'C+': number; C: number }
+type Grade = 'A' | 'B' | 'C' | 'D' | 'F'
+type Cuts = { A: number; B: number; C: number; D: number }
 
 interface LiveStudent {
   id: string
@@ -20,23 +20,26 @@ interface LiveStudent {
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const DEFAULT_CUTS: Cuts = { 'A+': 93, A: 87, 'B+': 80, B: 73, 'C+': 65, C: 58 }
+function defaultCuts(maxPts: number): Cuts {
+  return {
+    A: Math.round(maxPts * 0.9),
+    B: Math.round(maxPts * 0.8),
+    C: Math.round(maxPts * 0.7),
+    D: Math.round(maxPts * 0.6),
+  }
+}
 
 const GRADE_COLORS: Record<Grade, string> = {
-  'A+': '#10b981', A: '#34d399', 'B+': '#6366f1', B: '#818cf8',
-  'C+': '#f59e0b', C: '#fbbf24', D: '#f87171', F: '#ef4444',
+  A: '#10b981', B: '#6366f1', C: '#f59e0b', D: '#f87171', F: '#ef4444',
 }
 const GRADE_BADGE: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'gray'> = {
-  'A+': 'success', A: 'success', 'B+': 'info', B: 'info',
-  'C+': 'warning', C: 'warning', D: 'danger', F: 'danger',
+  A: 'success', B: 'info', C: 'warning', D: 'danger', F: 'danger',
 }
 const CUTOFF_CONFIG = [
-  { key: 'A+' as const, label: 'A+ 기준', color: '#10b981' },
-  { key: 'A'  as const, label: 'A  기준', color: '#6366f1' },
-  { key: 'B+' as const, label: 'B+ 기준', color: '#8b5cf6' },
-  { key: 'B'  as const, label: 'B  기준', color: '#f59e0b' },
-  { key: 'C+' as const, label: 'C+ 기준', color: '#f97316' },
-  { key: 'C'  as const, label: 'C  기준', color: '#ef4444' },
+  { key: 'A' as const, label: 'A 기준', color: '#10b981' },
+  { key: 'B' as const, label: 'B 기준', color: '#6366f1' },
+  { key: 'C' as const, label: 'C 기준', color: '#f59e0b' },
+  { key: 'D' as const, label: 'D 기준', color: '#f87171' },
 ]
 const BINS = [
   { range: '0-49',   min: 0,  max: 49  },
@@ -49,18 +52,25 @@ const BINS = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function computeGrade(score: number, cuts: Cuts): Grade {
-  if (score >= cuts['A+']) return 'A+'
-  if (score >= cuts.A)    return 'A'
-  if (score >= cuts['B+']) return 'B+'
-  if (score >= cuts.B)    return 'B'
-  if (score >= cuts['C+']) return 'C+'
-  if (score >= cuts.C)    return 'C'
-  if (score >= 50)        return 'D'
+  if (score >= cuts.A) return 'A'
+  if (score >= cuts.B) return 'B'
+  if (score >= cuts.C) return 'C'
+  if (score >= cuts.D) return 'D'
   return 'F'
 }
 
 function effectiveScore(s: LiveStudent): number {
   return s.confirmedScore ?? s.aiScore ?? 0
+}
+
+/** 각 컷오프 키에 대한 슬라이더 min/max 반환 (인접 등급 교차 방지) */
+function sliderBounds(key: keyof Cuts, cuts: Cuts, maxPts: number): { min: number; max: number } {
+  switch (key) {
+    case 'A': return { min: cuts.B + 1, max: maxPts }
+    case 'B': return { min: cuts.C + 1, max: cuts.A - 1 }
+    case 'C': return { min: cuts.D + 1, max: cuts.B - 1 }
+    case 'D': return { min: 1,          max: cuts.C - 1 }
+  }
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
@@ -87,14 +97,20 @@ function SaveFeedback({ state }: { state: 'idle' | 'saving' | 'ok' | 'error' }) 
 // ── Main component ────────────────────────────────────────────────────────────
 interface Props {
   assignmentId?: string
+  maxPts?: number
 }
 
-export default function GradeOptimizer({ assignmentId }: Props) {
+export default function GradeOptimizer({ assignmentId, maxPts = 100 }: Props) {
   const [students, setStudents] = useState<LiveStudent[]>([])
   const [loading, setLoading] = useState(false)
-  const [cuts, setCuts] = useState<Cuts>(DEFAULT_CUTS)
+  const [cuts, setCuts] = useState<Cuts>(() => defaultCuts(maxPts))
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'ok' | 'error'>('idle')
   const [savedAt, setSavedAt] = useState<string | null>(null)
+
+  // maxPts 변경 시 cuts를 비율 기반으로 재설정
+  useEffect(() => {
+    setCuts(defaultCuts(maxPts))
+  }, [maxPts])
 
   // ── Fetch live submissions ────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -143,7 +159,7 @@ export default function GradeOptimizer({ assignmentId }: Props) {
   )
 
   const gradeCounts = useMemo(() =>
-    (['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F'] as Grade[]).reduce(
+    (['A', 'B', 'C', 'D', 'F'] as Grade[]).reduce(
       (acc, g) => ({ ...acc, [g]: scoredStudents.filter(s => s.grade === g).length }),
       {} as Record<Grade, number>
     ),
@@ -229,7 +245,7 @@ export default function GradeOptimizer({ assignmentId }: Props) {
       {/* Save feedback + stats strip */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex flex-wrap gap-1.5">
-          {(['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F'] as Grade[]).map(g =>
+          {(['A', 'B', 'C', 'D', 'F'] as Grade[]).map(g =>
             gradeCounts[g] > 0 ? (
               <Badge key={g} variant={GRADE_BADGE[g]}>
                 {g}: {gradeCounts[g]}명 ({total > 0 ? Math.round(gradeCounts[g] / total * 100) : 0}%)
@@ -314,10 +330,12 @@ export default function GradeOptimizer({ assignmentId }: Props) {
               <div className="flex items-center gap-1.5 mb-1">
                 <SlidersHorizontal size={13} className="text-slate-400" />
                 <span className="text-xs font-700 text-slate-500 uppercase tracking-wide">등급 컷오프 조절</span>
+                <span className="text-xs text-slate-300 ml-auto">만점 {maxPts}점 기준</span>
               </div>
               {CUTOFF_CONFIG.map(({ key, label, color }) => {
                 const count = gradeCounts[key] ?? 0
                 const pct = total > 0 ? Math.round(count / total * 100) : 0
+                const { min: sMin, max: sMax } = sliderBounds(key, cuts, maxPts)
                 return (
                   <div key={key} className="space-y-1">
                     <div className="flex justify-between items-center">
@@ -329,10 +347,10 @@ export default function GradeOptimizer({ assignmentId }: Props) {
                         <span className="text-xs text-slate-400">{count}명 ({pct}%)</span>
                         <input
                           type="number"
-                          min={50} max={100}
+                          min={sMin} max={sMax}
                           value={cuts[key]}
                           onChange={e => {
-                            const v = Math.min(100, Math.max(50, parseInt(e.target.value) || 50))
+                            const v = Math.min(sMax, Math.max(sMin, parseInt(e.target.value) || sMin))
                             setCuts(prev => ({ ...prev, [key]: v }))
                             setSaveState('idle')
                           }}
@@ -343,7 +361,7 @@ export default function GradeOptimizer({ assignmentId }: Props) {
                       </div>
                     </div>
                     <input
-                      type="range" min={50} max={100} step={1}
+                      type="range" min={sMin} max={sMax} step={1}
                       value={cuts[key]}
                       onChange={e => {
                         setCuts(prev => ({ ...prev, [key]: parseInt(e.target.value) }))
@@ -396,8 +414,8 @@ export default function GradeOptimizer({ assignmentId }: Props) {
             </div>
 
             {/* Grade distribution summary grid */}
-            <div className="mt-3 grid grid-cols-4 gap-1.5">
-              {(['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F'] as Grade[]).map(g => (
+            <div className="mt-3 grid grid-cols-5 gap-1.5">
+              {(['A', 'B', 'C', 'D', 'F'] as Grade[]).map(g => (
                 <div key={g} className="text-center p-2 bg-slate-50 rounded-lg border border-slate-100">
                   <div className="text-xs font-700" style={{ color: GRADE_COLORS[g] }}>{g}</div>
                   <div className="text-sm font-800 text-slate-800">{gradeCounts[g]}</div>
