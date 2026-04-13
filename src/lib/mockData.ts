@@ -39,9 +39,11 @@ export interface Assignment {
 }
 
 export interface ChatMessage {
-  role: 'bot' | 'user'
+  role: 'bot' | 'user' | 'professor'
   text: string
-  timestamp: string
+  timestamp: string   // 표시용 포맷 문자열
+  createdAt?: string  // 정렬·저장용 ISO 문자열
+  notifId?: string
 }
 
 export const MOCK_STUDENTS: Student[] = [
@@ -166,6 +168,79 @@ export const ASSIGNMENT_HISTORY = [
   { name: '과제 3: 딥러닝 편향성 분석', date: '11/22', score: 85, grade: 'A-', status: 'confirmed' },
   { name: '최종 보고서: AI 윤리학', date: '12/15', score: 88, grade: 'A', status: 'confirmed' },
 ]
+
+export interface FeedbackReport {
+  section1: {
+    summary: string
+    items: { rubric: string; score: number; max: number; reason: string }[]
+  }
+  section2: {
+    items: { action: string; impact: string; category: 'logic' | 'reference' | 'readability' | 'format' | 'structure' }[]
+  }
+}
+
+export const FEEDBACK_REPORT: FeedbackReport = {
+  section1: {
+    summary:
+      '서론-본론-결론 구조가 명확하고 논리적 일관성이 높습니다. 참고 자료 활용이 우수하나, 반론 처리 부분에서 재반박이 짧아 감점이 적용되었습니다.',
+    items: [
+      {
+        rubric: '서론-본론-결론 형식 준수',
+        score: 20, max: 20,
+        reason: '3단 구조가 완벽하게 유지되었으며, 각 장의 전환이 자연스럽습니다. 서론에서 논지를 명확히 제시하고 결론에서 재확인하는 흐름이 우수합니다.',
+      },
+      {
+        rubric: '논리적 근거 및 주장 타당성',
+        score: 25, max: 30,
+        reason: '주요 주장의 근거가 대체로 명확하나, 3단락 반론-재반박 구간에서 재반박 논거가 1문장으로 마무리되어 설득력이 부족합니다. 이로 인해 -5점 감점이 적용되었습니다.',
+      },
+      {
+        rubric: '참고 자료 인용 및 출처 표기',
+        score: 22, max: 25,
+        reason: '총 12개 문헌 인용, 1차 자료 비중 65%(기준 50% 이상으로 우수). APA 7th 형식 적용이 2건 불완전하여 -3점이 적용되었습니다.',
+      },
+      {
+        rubric: '가독성 및 문장 구성',
+        score: 13, max: 15,
+        reason: '문장이 간결하고 단락 흐름이 자연스럽습니다. 일부 수동태 남용이 감지되었으며(-2점), 용어 일관성은 양호합니다.',
+      },
+      {
+        rubric: '분량 및 형식 요건',
+        score: 8, max: 10,
+        reason: 'A4 약 5.2매(기준 5매 이상 충족), 글자 크기·여백 규정 준수. 제목 페이지 형식이 미흡하여 -2점이 적용되었습니다.',
+      },
+    ],
+  },
+  section2: {
+    items: [
+      {
+        action: '반론-재반박-소결론 구조를 각 본론 단락에 명시적으로 작성하세요.',
+        impact: '논리력 +4~5점 예상',
+        category: 'logic',
+      },
+      {
+        action: '1차 자료(학술 논문·정부 보고서) 비중을 65% → 70% 이상으로 높이세요.',
+        impact: '자료활용도 +3점 예상',
+        category: 'reference',
+      },
+      {
+        action: 'APA 7th 인용 형식을 완전히 적용하세요 (저자·연도·페이지 번호 모두 포함).',
+        impact: '자료활용도 +3점 가능',
+        category: 'reference',
+      },
+      {
+        action: '각 장 말미에 소결론(1~2문장)을 추가하여 논지를 정리하세요.',
+        impact: '가독성 +2점 예상',
+        category: 'readability',
+      },
+      {
+        action: '수동태 문장을 능동태로 전환하세요. (예: "~이 분석되었다" → "본 논문은 ~을 분석했다")',
+        impact: '가독성 +2점 예상',
+        category: 'readability',
+      },
+    ],
+  },
+}
 
 export const BOT_RESPONSES: Record<string, string> = {
   default: '채점 기준에 따라 해당 항목을 분석했습니다. 더 구체적인 내용이 궁금하시면 항목 이름을 포함해서 질문해 주세요!',
