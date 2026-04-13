@@ -42,18 +42,25 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
   const [saving, setSaving] = useState(false)
   const [publishedId, setPublishedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 직접 추가한 루브릭 ID 추적 (AI 루브릭 적용 시 병합 유지용)
+  const [manualIds, setManualIds] = useState<Set<number>>(new Set())
 
   const totalPts = rubrics.reduce((a, r) => a + r.pts, 0)
 
   const addRubric = () => {
     if (!newText.trim()) return
-    setRubrics(r => [...r, { id: Date.now(), text: newText.trim(), pts: parseInt(newPts) || 10, category: 'logic' }])
+    const id = Date.now()
+    setManualIds(prev => new Set([...prev, id]))
+    setRubrics(r => [...r, { id, text: newText.trim(), pts: parseInt(newPts) || 10, category: 'logic' }])
     setNewText(''); setNewPts('')
   }
 
-  const removeRubric = (id: number) => setRubrics(r => r.filter(x => x.id !== id))
+  const removeRubric = (id: number) => {
+    setManualIds(prev => { const next = new Set(prev); next.delete(id); return next })
+    setRubrics(r => r.filter(x => x.id !== id))
+  }
 
-  // AI 생성 루브릭을 기존 목록에 반영
+  // AI 생성 루브릭을 기존 목록에 반영 -> 직접 추가한 루브릭은 유지하고 병합
   const handleAiGenerated = (aiRubrics: AIRubricItem[], _aiTotal: number) => {
     const converted: RubricItem[] = aiRubrics.map(r => ({
       id: Date.now() + r.id,
@@ -61,7 +68,10 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
       pts: r.score,
       category: 'logic' as const,
     }))
-    setRubrics(converted)
+    setRubrics(prev => {
+      const manualRubrics = prev.filter(r => manualIds.has(r.id))
+      return [...converted, ...manualRubrics]
+    })
     setShowGenerator(false)
   }
 

@@ -14,7 +14,7 @@ async function reanalyzeWithGroq(
   instructorFeedback: string,
   currentRubrics: RubricScore[],
   submissionText: string,
-): Promise<{ rubric_scores: RubricScore[]; feedback_short: string } | null> {
+): Promise<{ rubric_scores: RubricScore[]; feedback_short: string; isRateLimit?: boolean } | null> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) return null
 
@@ -39,7 +39,7 @@ ${instructorFeedback}
 ${currentSummary}
 
 ## 학생 제출물 (일부)
-${submissionText.slice(0, 3000)}${submissionText.length > 3000 ? '\n[... 이하 생략]' : ''}
+${submissionText.slice(0, 2000)}${submissionText.length > 2000 ? '\n[... 이하 생략]' : ''}
 
 위 교수님의 피드백을 최우선으로 반영하여 각 루브릭 항목의 점수와 평가 이유를 조정하세요.
 점수는 반드시 0 이상 만점(max_pts) 이하 정수여야 합니다.
@@ -59,7 +59,8 @@ ${rubricTemplate}
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        // model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-8b-instant', // 모델 하향 조정 (토큰 효율 및 속도 개선)
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -67,6 +68,7 @@ ${rubricTemplate}
     })
 
     if (!res.ok) {
+      if (res.status === 429) return { rubric_scores: [], feedback_short: '', isRateLimit: true }
       console.error('[reanalyze] Groq 오류:', res.status)
       return null
     }
@@ -130,16 +132,12 @@ export async function POST(
     grade.submission_content ?? '',
   )
 
+  // Rate Limit 발생 시 429 상태 코드로 응답 (에러 핸들링 보완)
+  if (aiResult?.isRateLimit) {
+    return NextResponse.json({ error: 'AI 분석 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' }, { status: 429 })
+  }
   if (!aiResult) {
-    // Groq 없을 때 폴백: 점수는 유지, reason에 교수 피드백 앞부분 추가
-    const fallback: RubricScore[] = currentRubrics.map(r => ({
-      ...r,
-      reason: `[교수 피드백 반영] ${instructor_feedback.slice(0, 60)} — ${r.reason}`,
-    }))
-    return NextResponse.json({
-      rubric_scores: fallback,
-      feedback_short: instructor_feedback,
-    })
+    return NextResponse.json({ error: 'AI 재분석에 실패했습니다. 잠시 후 다시 시도해 주세요.' }, { status: 503 })
   }
 
   // max_pts 및 rubric_text 원본 값으로 보정 (AI가 잘못된 값 반환 방지)

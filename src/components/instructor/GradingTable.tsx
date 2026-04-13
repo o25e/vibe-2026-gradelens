@@ -204,8 +204,11 @@ export default function GradingTable({ assignmentId }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instructor_feedback: editFeedback }),
       })
-      if (!res.ok) return
       const data = await res.json()
+      if (!res.ok) {
+        alert(data.error ?? 'AI 재분석에 실패했습니다.')
+        return
+      }
       if (data.rubric_scores?.length) {
         setEditRubrics(data.rubric_scores)
         const total = data.rubric_scores.reduce((a: number, r: RubricScore) => a + r.score, 0)
