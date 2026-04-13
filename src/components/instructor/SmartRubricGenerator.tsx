@@ -149,6 +149,7 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile 
           extractedText: combinedText,
           totalScore,
           assignmentTitle: assignmentTitle ?? '',
+          fileName: uploadedFile?.name ?? '',
         }),
       })
       const data = await res.json()

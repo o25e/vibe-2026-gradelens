@@ -79,7 +79,36 @@ Step 1·2 결과를 아래 형식의 JSON으로 출력하세요.
 }
 
 // ── Rule-based Fallback ────────────────────────────────────────────────────────
-function buildFallbackRubrics(totalScore: number): AIRubricItem[] {
+function buildFallbackRubrics(totalScore: number, assignmentTitle: string, fileName = ''): AIRubricItem[] {
+  // 1. 예시 데이터들 - 파일 이름이나 제목으로 매칭
+  const SCENARIOS: Record<string, AIRubricItem[]> = {
+    "프로그래밍1_과제1": [
+      { id: 1, criteria: '자료형 활용', description: '문자열, 리스트, 딕셔너리 등 파이썬 자료형을 적절히 활용했는지 확인.', score: Math.round(totalScore * 0.3)},
+      { id: 2, criteria: '문자열 포매팅', description: '%, format(), f-string 을 사용해 구구단을 정확히 출력했는지 확인.', score: Math.round(totalScore * 0.4) },
+      { id: 3, criteria: '원의 면적 계산', description: '반지름 입력→원의 면적 계산→소수점 2자리 반올림 출력이 정확히 구현되었는지 확인.', score: totalScore - Math.round(totalScore * 0.4) - Math.round(totalScore * 0.3) },
+    ],
+    "사용자경험디자인_과제2": [
+      { id: 1, criteria: '가설의 적절성', description: '일반적인 사용자가 당연하다고 믿는 사실을 잘 포착했는지 확인.', score: Math.round(totalScore * 0.4) },
+      { id: 2, criteria: '주장의 논리성', description: '디자이너로서 타당한 수정안이나 새로운 시각을 제시하였는지 확인.', score: Math.round(totalScore * 0.3) },
+      { id: 3, criteria: '아이디어의 참신성', description: '일반적인 사용자 경험을 넘어선 독창적인 대안인지 확인.', score: totalScore - Math.round(totalScore * 0.4) - Math.round(totalScore * 0.3) },
+    ]
+  };
+
+  // 2. 만약 입력된 제목이나 파일명이 시나리오에 있다면 해당 루브릭 반환
+  const normalize = (s: string) => s.replace(/[\s_\-·.]/g, '').toLowerCase()
+  const normTitle = normalize(assignmentTitle)
+  // 파일명은 확장자 제거 후 정규화
+  const normFile = normalize(fileName.replace(/\.[^.]+$/, ''))
+  for (const key in SCENARIOS) {
+    const normKey = normalize(key)
+    const matchTitle = normTitle.length >= 3 && normTitle.includes(normKey)
+    const matchFile  = normFile.length  >= 3 && normFile.includes(normKey)
+    if (matchTitle || matchFile) {
+      return SCENARIOS[key];
+    }
+  }
+
+  // 3. 매칭되는 게 없을 때만 기존의 일반적인 폴백 실행
   const weights = [0.40, 0.35, 0.25]
   const templates = [
     {
@@ -151,14 +180,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Instructor only' }, { status: 403 })
   }
 
-  let body: { extractedText?: string; totalScore?: number; assignmentTitle?: string }
+  let body: { extractedText?: string; totalScore?: number; assignmentTitle?: string; fileName?: string }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: '요청 형식이 올바르지 않습니다.' }, { status: 400 })
   }
 
-  const { extractedText, totalScore, assignmentTitle } = body
+  const { extractedText, totalScore, assignmentTitle, fileName } = body
 
   if (!extractedText?.trim()) {
     return NextResponse.json({ error: '분석할 텍스트를 입력해주세요.' }, { status: 400 })
@@ -170,7 +199,7 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
     console.log('[rubric-generate] GROQ_API_KEY 없음 — 규칙 기반 루브릭 생성')
-    const rubrics = buildFallbackRubrics(totalScore)
+    const rubrics = buildFallbackRubrics(totalScore, assignmentTitle || '', fileName || '')
     return NextResponse.json({ total_score: totalScore, rubrics } satisfies RubricGenerateResponse)
   }
 
@@ -235,7 +264,7 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error('[rubric-generate] 오류, fallback 전환:', err)
-    const rubrics = buildFallbackRubrics(totalScore)
+    const rubrics = buildFallbackRubrics(totalScore, assignmentTitle || '', fileName || '')
     return NextResponse.json({ total_score: totalScore, rubrics } satisfies RubricGenerateResponse)
   }
 }
