@@ -5,7 +5,7 @@
 
 ## Live Demo
 
-- Vercel URL: `https://<your-vercel-domain>.vercel.app`
+- Vercel URL: `https://vibe-2026-gradelens-vercel.vercel.app/login`
 
 ## How to Test (심사위원 테스트 시나리오)
 
