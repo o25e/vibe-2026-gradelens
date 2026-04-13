@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (session.role === 'instructor') {
     // 교수: 과제별 전체 제출 현황 (is_published 포함)
     if (!assignmentId) return NextResponse.json({ error: 'assignment_id required' }, { status: 400 })
-    rows = db.prepare(`
+    rows = await db.prepare(`
       SELECT s.*, u.name as student_name, u.student_id as student_number, u.department,
              g.ai_score, g.confirmed_score, g.status as grade_status, g.feedback_short,
              g.rubric_scores, g.radar_scores, g.section1_summary, g.section2_items,
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     `).all(assignmentId)
   } else {
     // 학생: 본인 제출 목록 — 미공지 성적은 숨김
-    rows = db.prepare(`
+    rows = await db.prepare(`
       SELECT s.id, s.assignment_id, s.submitted_at, s.word_count, s.file_name,
              a.title as assignment_title, a.course,
              CASE WHEN g.is_published = 1 THEN g.ai_score    ELSE NULL END as ai_score,
@@ -76,10 +76,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '과제 ID와 제출 내용을 입력하세요.' }, { status: 400 })
   }
 
-  const assignment = db.prepare('SELECT * FROM assignments WHERE id = ? AND is_active = 1').get(assignment_id) as Record<string, unknown> | undefined
+  const assignment = await db.prepare('SELECT * FROM assignments WHERE id = ? AND is_active = 1').get(assignment_id) as Record<string, unknown> | undefined
   if (!assignment) return NextResponse.json({ error: '존재하지 않거나 마감된 과제입니다.' }, { status: 404 })
 
-  const rubricItems = db
+  const rubricItems = await db
     .prepare('SELECT text, pts, category FROM rubric_items WHERE assignment_id = ? ORDER BY sort_order')
     .all(assignment_id) as { text: string; pts: number; category: string }[]
 
@@ -92,25 +92,25 @@ export async function POST(req: NextRequest) {
   const gradeId = randomUUID()
 
   // 기존 제출 여부 확인
-  const existing = db.prepare('SELECT id FROM submissions WHERE assignment_id = ? AND student_id = ?')
+  const existing = await db.prepare('SELECT id FROM submissions WHERE assignment_id = ? AND student_id = ?')
     .get(assignment_id, session.id) as { id: string } | undefined
 
   const finalSubmissionId = existing?.id ?? submissionId
 
   if (existing) {
-    db.prepare(`
+    await db.prepare(`
       UPDATE submissions SET content = ?, file_name = ?, word_count = ?, submitted_at = datetime('now')
       WHERE id = ?
     `).run(content.trim(), file_name ?? null, wordCount, existing.id)
   } else {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO submissions (id, assignment_id, student_id, content, file_name, word_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(submissionId, assignment_id, session.id, content.trim(), file_name ?? null, wordCount)
   }
 
   // 기존 성적 삭제 (재제출)
-  db.prepare('DELETE FROM grades WHERE submission_id = ?').run(finalSubmissionId)
+  await db.prepare('DELETE FROM grades WHERE submission_id = ?').run(finalSubmissionId)
 
   // AI 채점 (결과는 DB에만 저장, 학생에게 즉시 공개 안 함)
   const result = await gradeSubmission({
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
   })
 
   const flagged = result.total_score < 50
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO grades (id, submission_id, ai_score, status, rubric_scores, radar_scores,
                         section1_summary, section2_items, feedback_short)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { Button, Card, CardHeader, Badge } from '@/components/ui'
 import type { AIRubricItem } from '@/app/api/rubric-generate/route'
+import dummyData from '../../../data/dummy.json'
 
 export type { AIRubricItem }
 
@@ -15,6 +16,8 @@ interface Props {
   onApply: (rubrics: AIRubricItem[], totalScore: number) => void
   onFile?: (file: File) => void
 }
+
+const RUBRIC_GENERATE_TIMEOUT_MS = 25_000
 
 // ── Skeleton Row ──────────────────────────────────────────────────────────────
 function SkeletonRow() {
@@ -72,12 +75,38 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile 
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   const [hasResult, setHasResult] = useState(false)
+  const [requestTimedOut, setRequestTimedOut] = useState(false)
 
   // Editable rubrics
   const [editRubrics, setEditRubrics] = useState<AIRubricItem[]>([])
   const nextId = useRef(100)
 
   const currentSum = editRubrics.reduce((a, r) => a + r.score, 0)
+
+  const loadDummyPreset = () => {
+    const preset = (dummyData.initialRubrics ?? []).map((r, idx) => {
+      const text = String(r.text ?? '')
+      const [firstLine, ...rest] = text.split('\n')
+      return {
+        id: Number(r.id ?? idx + 1),
+        criteria: firstLine || `항목 ${idx + 1}`,
+        description: rest.join('\n') || text,
+        score: Number(r.pts ?? 0),
+      } satisfies AIRubricItem
+    })
+    const sum = preset.reduce((acc, r) => acc + r.score, 0)
+    setUploadedFile(null)
+    setExtractedText(dummyData.demoGuidelineText ?? '')
+    setDirectInput('')
+    setParseError(null)
+    setAiError(null)
+    setRequestTimedOut(false)
+    setTotalScore(sum > 0 ? sum : totalScore)
+    setEditRubrics(preset)
+    nextId.current = Math.max(...preset.map(r => r.id), 100) + 1
+    setHasResult(true)
+    setTextareaExpanded(true)
+  }
 
   // ── File → Server 텍스트 추출 ──────────────────────────────────────────────
   const handleFile = useCallback(async (f: File) => {
@@ -140,11 +169,16 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile 
     setAiLoading(true)
     setAiError(null)
     setHasResult(false)
+    setRequestTimedOut(false)
 
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
     try {
+      const controller = new AbortController()
+      timeoutId = setTimeout(() => controller.abort(), RUBRIC_GENERATE_TIMEOUT_MS)
       const res = await fetch('/api/rubric-generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           extractedText: combinedText,
           totalScore,
@@ -160,8 +194,14 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile 
       nextId.current = Math.max(...rubrics.map(r => r.id)) + 1
       setHasResult(true)
     } catch (e) {
-      setAiError((e as Error).message)
+      if ((e as Error).name === 'AbortError') {
+        setRequestTimedOut(true)
+        setAiError('AI 루브릭 생성이 지연되어 요청이 시간 초과되었습니다. 잠시 후 다시 시도하거나 가이드라인 텍스트를 줄여주세요.')
+      } else {
+        setAiError((e as Error).message)
+      }
     } finally {
+      if (timeoutId) clearTimeout(timeoutId)
       setAiLoading(false)
     }
   }
@@ -223,6 +263,13 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile 
             : <><Sparkles size={13} /> 루브릭 자동 생성</>
           }
         </Button>
+        <Button
+          variant="outline"
+          onClick={loadDummyPreset}
+          disabled={aiLoading || parseLoading}
+        >
+          더미 데이터로 체험하기
+        </Button>
       </div>
 
       {/* ── 파일 업로드 ── */}
@@ -232,6 +279,13 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile 
           파일 업로드&nbsp;
           <span className="font-400 text-slate-400">PDF · DOCX · TXT · HWP</span>
         </label>
+        <a
+          href="/samples/sample_guideline.docx"
+          download="sample_guideline.docx"
+          className="inline-flex items-center gap-1.5 mb-2 px-2.5 py-1.5 text-xs font-600 text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+        >
+          테스트용 샘플 가이드라인 다운로드
+        </a>
 
         {/* 파일 없음 — 드롭존 */}
         {!uploadedFile && (
@@ -349,6 +403,14 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile 
         <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
           <AlertCircle size={13} className="flex-shrink-0" />
           {aiError}
+          {requestTimedOut && (
+            <button
+              onClick={handleGenerate}
+              className="ml-auto text-red-700 font-700 underline underline-offset-2"
+            >
+              다시 시도
+            </button>
+          )}
         </div>
       )}
 
@@ -358,6 +420,9 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile 
           <div className="flex items-center gap-2 mb-3 text-xs text-indigo-600 font-600">
             <Loader2 size={13} className="animate-spin" />
             AI가 텍스트를 분석하여 채점 기준을 설계하고 있습니다...
+          </div>
+          <div className="mb-2 text-xs text-slate-500">
+            응답이 지연되면 약 {Math.round(RUBRIC_GENERATE_TIMEOUT_MS / 1000)}초 후 자동으로 중단하고 재시도할 수 있습니다.
           </div>
           <div className="rounded-xl border border-slate-200 overflow-hidden">
             <table className="w-full text-xs">

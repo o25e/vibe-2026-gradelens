@@ -7,7 +7,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const row = db.prepare(`
+  const row = await db.prepare(`
     SELECT s.*, u.name as student_name, u.student_id as student_number, u.department,
            a.title as assignment_title, a.course, a.description as assignment_description,
            g.id as grade_id, g.ai_score, g.confirmed_score, g.status as grade_status,

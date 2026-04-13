@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '올바른 역할을 선택해주세요.' }, { status: 400 })
     }
 
-    const existing = db
+    const existing = await db
       .prepare('SELECT id FROM users WHERE email = ?')
       .get(email.toLowerCase().trim())
     if (existing) {
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const hashed = await bcrypt.hash(password, 10)
     const id = randomUUID()
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO users (id, name, email, password, role, department, student_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(

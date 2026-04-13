@@ -14,9 +14,9 @@ export interface SessionPayload {
 
 export const COOKIE_NAME = 'gradelens_session'
 
-const SECRET = new TextEncoder().encode(
-  getRequiredEnv('JWT_SECRET')
-)
+function getSecretKey(): Uint8Array {
+  return new TextEncoder().encode(getRequiredEnv('JWT_SECRET'))
+}
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -31,12 +31,12 @@ export async function createSession(payload: SessionPayload): Promise<string> {
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('7d')
-    .sign(SECRET)
+    .sign(getSecretKey())
 }
 
 export async function verifySession(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, SECRET)
+    const { payload } = await jwtVerify(token, getSecretKey())
     return payload as unknown as SessionPayload
   } catch {
     return null

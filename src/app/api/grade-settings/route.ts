@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'assignment_id required' }, { status: 400 })
   }
 
-  const row = db
+  const row = await db
     .prepare('SELECT cuts, updated_at FROM grade_settings WHERE assignment_id = ?')
     .get(assignmentId) as { cuts: string; updated_at: string } | undefined
 
@@ -39,14 +39,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Verify assignment belongs to this instructor
-  const assignment = db
+  const assignment = await db
     .prepare('SELECT id FROM assignments WHERE id = ? AND instructor_id = ?')
     .get(assignment_id, session.id)
   if (!assignment) {
     return NextResponse.json({ error: '권한이 없거나 존재하지 않는 과제입니다.' }, { status: 403 })
   }
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO grade_settings (id, assignment_id, cuts)
     VALUES (?, ?, ?)
     ON CONFLICT(assignment_id) DO UPDATE SET

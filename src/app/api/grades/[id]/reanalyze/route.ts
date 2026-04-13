@@ -105,7 +105,7 @@ export async function POST(
   }
 
   // 성적 및 제출물 조회
-  const grade = db.prepare(`
+  const grade = await db.prepare(`
     SELECT g.id, g.rubric_scores, s.content AS submission_content
     FROM grades g
     JOIN submissions s ON s.id = g.submission_id

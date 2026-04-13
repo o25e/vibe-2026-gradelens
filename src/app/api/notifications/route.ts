@@ -7,14 +7,14 @@ export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const notifications = db.prepare(`
+  const notifications = await db.prepare(`
     SELECT * FROM notifications
     WHERE user_id = ?
     ORDER BY created_at DESC
     LIMIT 30
   `).all(session.id)
 
-  const { cnt: unreadCount } = db.prepare(
+  const { cnt: unreadCount } = await db.prepare(
     'SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0'
   ).get(session.id) as { cnt: number }
 
@@ -28,6 +28,6 @@ export async function PATCH(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(session.id)
+  await db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(session.id)
   return NextResponse.json({ ok: true })
 }

@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "functions": {
+    "src/app/api/rubric-generate/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/**/*.ts": {
       "maxDuration": 30
     }

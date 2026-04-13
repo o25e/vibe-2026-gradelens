@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   }
 
   // 이 교수에게 들어온 학생 문의 (assignment_id = student user_id)
-  const inquiries = db.prepare(`
+  const inquiries = await db.prepare(`
     SELECT * FROM notifications
     WHERE type = 'student_inquiry' AND user_id = ?
     ORDER BY created_at DESC
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 
     if (!threadMap.has(stuId)) {
       // 학생 정보 조회
-      const student = db.prepare(
+      const student = await db.prepare(
         `SELECT name, student_id FROM users WHERE id = ?`
       ).get(stuId) as { name: string; student_id: string | null } | undefined
 
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
 
   // 각 학생 스레드에 교수 답변도 추가
   for (const [stuId, thread] of Array.from(threadMap)) {
-    const replies = db.prepare(`
+    const replies = await db.prepare(`
       SELECT id, body, created_at FROM notifications
       WHERE type = 'professor_reply' AND user_id = ? AND assignment_id = ?
       ORDER BY created_at ASC
@@ -122,13 +122,13 @@ export async function POST(req: NextRequest) {
   }
 
   // 학생 확인
-  const student = db.prepare(`SELECT name, student_id FROM users WHERE id = ?`).get(studentUserId) as
+  const student = await db.prepare(`SELECT name, student_id FROM users WHERE id = ?`).get(studentUserId) as
     | { name: string; student_id: string | null }
     | undefined
   if (!student) return NextResponse.json({ error: '학생을 찾을 수 없습니다.' }, { status: 404 })
 
   // 학생에게 답변 알림 전송 (assignment_id = instructor user_id)
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO notifications (id, user_id, type, title, body, assignment_id, is_read, created_at)
     VALUES (?, ?, 'professor_reply', ?, ?, ?, 0, datetime('now'))
   `).run(
@@ -142,12 +142,12 @@ export async function POST(req: NextRequest) {
   // 해당 학생의 문의 알림을 읽음 처리
   if (inquiryIds && inquiryIds.length > 0) {
     const placeholders = inquiryIds.map(() => '?').join(',')
-    db.prepare(
+    await db.prepare(
       `UPDATE notifications SET is_read = 1 WHERE id IN (${placeholders}) AND user_id = ?`
     ).run(...inquiryIds, session.id)
   } else {
     // inquiryIds 없으면 해당 학생의 모든 미읽음 문의 읽음 처리
-    db.prepare(`
+    await db.prepare(`
       UPDATE notifications SET is_read = 1
       WHERE type = 'student_inquiry' AND user_id = ? AND assignment_id = ? AND is_read = 0
     `).run(session.id, studentUserId)

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   const inquiryMessage = message?.trim() || '긴급 문의가 있습니다. 확인 부탁드립니다.'
 
   // 이 학생이 제출한 과제의 담당 교수 목록 조회
-  const instructors = db.prepare(`
+  const instructors = await db.prepare(`
     SELECT DISTINCT a.instructor_id, u.name AS instructor_name
     FROM assignments a
     JOIN submissions s ON a.id = s.assignment_id
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   // 제출 내역이 없으면 시스템에 등록된 교수 전원에게
   if (instructors.length === 0) {
-    const all = db.prepare(
+    const all = await db.prepare(
       `SELECT id AS instructor_id, name AS instructor_name FROM users WHERE role = 'instructor'`
     ).all() as { instructor_id: string; instructor_name: string }[]
     instructors.push(...all)
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   `)
 
   for (const inst of instructors) {
-    stmt.run(
+    await stmt.run(
       randomUUID(),
       inst.instructor_id,
       `📩 긴급 문의: ${studentName}${studentId ? ` (${studentId})` : ''} 학생`,

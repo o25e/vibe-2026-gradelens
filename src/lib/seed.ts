@@ -33,10 +33,10 @@ export async function seedDemoUsers() {
   seeded = true
 
   for (const u of DEMO_USERS) {
-    const exists = db.prepare('SELECT id FROM users WHERE id = ?').get(u.id)
+    const exists = await db.prepare('SELECT id FROM users WHERE id = ?').get(u.id)
     if (!exists) {
       const hashed = await bcrypt.hash(u.password, 10)
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO users (id, name, email, password, role, department, student_id)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(u.id, u.name, u.email, hashed, u.role, u.department, u.student_id)

@@ -1,0 +1,10 @@
+{
+  "demoGuidelineText": "과제명: AI 윤리 리포트\n요구사항:\n1) 서론-본론-결론 구조를 갖출 것\n2) 핵심 주장마다 최소 1개 이상의 근거를 제시할 것\n3) 참고문헌 10개 이상을 인용하고 출처를 표기할 것\n4) 분량 및 형식 요건을 준수할 것",
+  "initialRubrics": [
+    { "id": 1, "text": "서론-본론-결론 형식 준수", "pts": 20, "category": "structure" },
+    { "id": 2, "text": "논리적 근거 및 주장 타당성", "pts": 30, "category": "logic" },
+    { "id": 3, "text": "참고 자료 인용 및 출처 표기 (10개 이상)", "pts": 25, "category": "reference" },
+    { "id": 4, "text": "가독성 및 문장 구성", "pts": 15, "category": "readability" },
+    { "id": 5, "text": "분량 및 형식 요건 (A4 5매 이상)", "pts": 10, "category": "format" }
+  ]
+}

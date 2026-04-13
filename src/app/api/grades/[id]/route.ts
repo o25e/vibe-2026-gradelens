@@ -14,7 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { confirmed_score, feedback_short, status, publish, rubric_scores } = body
 
   // 과제 및 학생 정보 조회
-  const grade = db.prepare(`
+  const grade = await db.prepare(`
     SELECT g.*, s.student_id, s.assignment_id, u.name as student_name, a.title as assignment_title
     FROM grades g
     JOIN submissions s ON s.id = g.submission_id
@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   let updatedRadarScores: Record<string, number> | null = null
   if (effectiveRubrics && effectiveRubrics.length > 0) {
     // 과제의 루브릭 항목에서 카테고리 정보 조회
-    const rubricItems = db
+    const rubricItems = await db
       .prepare('SELECT text, category FROM rubric_items WHERE assignment_id = ?')
       .all(grade.assignment_id as string) as { text: string; category: string }[]
 
@@ -104,7 +104,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   // 점수/피드백/루브릭/상태/section1_summary/radar_scores 업데이트
-  db.prepare(`
+  await db.prepare(`
     UPDATE grades
     SET confirmed_score  = COALESCE(?, confirmed_score),
         feedback_short   = COALESCE(?, feedback_short),
@@ -126,7 +126,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   // 공지(publish) 처리
   if (publish) {
-    db.prepare(`UPDATE grades SET is_published = 1, confirmed_at = datetime('now') WHERE id = ?`)
+    await db.prepare(`UPDATE grades SET is_published = 1, confirmed_at = datetime('now') WHERE id = ?`)
       .run(params.id)
 
     const wasPublished = (grade.is_published as number) === 1
@@ -135,7 +135,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const notifTitle = wasPublished ? '성적이 수정되었습니다' : '채점 결과가 공개되었습니다'
     const notifBody  = `[${grade.assignment_title}] 최종 점수: ${finalScore}점`
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO notifications (id, user_id, type, title, body, assignment_id)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(
@@ -148,7 +148,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     )
   }
 
-  const updated = db.prepare(`
+  const updated = await db.prepare(`
     SELECT g.*, s.student_id, u.name as student_name
     FROM grades g
     JOIN submissions s ON s.id = g.submission_id

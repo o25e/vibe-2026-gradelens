@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '이메일과 비밀번호를 입력해주세요.' }, { status: 400 })
     }
 
-    const user = db
+    const user = await db
       .prepare('SELECT * FROM users WHERE email = ?')
       .get(email.toLowerCase().trim()) as UserRow | undefined
 

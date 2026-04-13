@@ -1,3 +1,5 @@
+import dummyData from '../../data/dummy.json'
+
 export type GradeStatus = 'confirmed' | 'pending' | 'flagged'
 
 export interface RadarMetrics {
@@ -109,13 +111,7 @@ export const MOCK_STUDENTS: Student[] = [
   },
 ]
 
-export const INITIAL_RUBRICS: RubricItem[] = [
-  { id: 1, text: '서론-본론-결론 형식 준수', pts: 20, category: 'structure' },
-  { id: 2, text: '논리적 근거 및 주장 타당성', pts: 30, category: 'logic' },
-  { id: 3, text: '참고 자료 인용 및 출처 표기 (10개 이상)', pts: 25, category: 'reference' },
-  { id: 4, text: '가독성 및 문장 구성', pts: 15, category: 'readability' },
-  { id: 5, text: '분량 및 형식 요건 (A4 5매 이상)', pts: 10, category: 'format' },
-]
+export const INITIAL_RUBRICS: RubricItem[] = dummyData.initialRubrics as RubricItem[]
 
 export const MOCK_ASSIGNMENT: Assignment = {
   id: 1,

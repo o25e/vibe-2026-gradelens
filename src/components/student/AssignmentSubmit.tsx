@@ -148,11 +148,15 @@ export default function AssignmentSubmit({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '제출에 실패했습니다.')
 
-      // 첨부 파일 바이너리를 서버에 저장 (교수가 다운로드할 수 있도록)
+      // 첨부 파일은 서버 메모리(Buffer)로 받아 DB BLOB에 저장
       if (fileObject && data.submission_id) {
         const fd = new FormData()
         fd.append('file', fileObject)
-        await fetch(`/api/submissions/${data.submission_id}/file`, { method: 'POST', body: fd })
+        const uploadRes = await fetch(`/api/submissions/${data.submission_id}/file`, { method: 'POST', body: fd })
+        if (!uploadRes.ok) {
+          const uploadData = await uploadRes.json().catch(() => ({}))
+          throw new Error(uploadData.error ?? '첨부 파일 저장에 실패했습니다.')
+        }
       }
 
       setSubmitted(true)
