@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Plus, Sparkles, CheckCircle2, BookOpen, AlignLeft, Quote, Eye, FileText, X, Upload, Send, Wand2 } from 'lucide-react'
+import { Plus, Sparkles, CheckCircle2, BookOpen, AlignLeft, Quote, Eye, FileText, X, Send, Wand2, Paperclip } from 'lucide-react'
 import { Button, Card, CardHeader, Badge } from '@/components/ui'
 import { AI_SUGGESTIONS, INITIAL_RUBRICS } from '@/lib/mockData'
 import type { RubricItem } from '@/lib/mockData'
@@ -39,6 +39,8 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
 
   const [showGenerator, setShowGenerator] = useState(false)
 
+  const [guidelineFile, setGuidelineFile] = useState<File | null>(null)
+
   const [saving, setSaving] = useState(false)
   const [publishedId, setPublishedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -71,8 +73,8 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
   }
 
   const handlePublish = async () => {
-    if (!title.trim() || !course.trim() || !deadline) {
-      setError('과제 제목, 과목명, 마감 기한을 모두 입력하세요.')
+    if (!title.trim() || !description.trim() || !course.trim() || !deadline) {
+      setError('과제 제목, 과제 설명, 마감 기한을 모두 입력하세요.')
       return
     }
     if (rubrics.length === 0) {
@@ -98,8 +100,17 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '저장에 실패했습니다.')
 
-      setPublishedId(data.assignment.id)
-      onPublished?.(data.assignment.id)
+      const assignmentId = data.assignment.id
+
+      // 가이드라인 파일이 있으면 업로드
+      if (guidelineFile) {
+        const fd = new FormData()
+        fd.append('file', guidelineFile)
+        await fetch(`/api/assignments/${assignmentId}/guideline`, { method: 'POST', body: fd })
+      }
+
+      setPublishedId(assignmentId)
+      onPublished?.(assignmentId)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -158,6 +169,7 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
           <SmartRubricGenerator
             assignmentTitle={title}
             onApply={handleAiGenerated}
+            onFile={f => setGuidelineFile(f)}
           />
         </div>
       )}
@@ -207,27 +219,44 @@ export default function RubricBuilder({ onPublished, defaultCourse }: Props) {
             />
           </div>
 
-          {/* AI 루브릭 생성 버튼 */}
+          {/* 파일 첨부 + AI 루브릭 생성 (통합) */}
           <div>
             <label className="block text-xs font-600 text-slate-500 mb-1.5">
-              <Upload size={11} className="inline mr-1 text-slate-400" />
-              AI 채점 기준 자동 생성
+              <Paperclip size={11} className="inline mr-1 text-slate-400" />
+              가이드라인 파일 첨부
+              <span className="ml-1 font-400 text-slate-400">· 학생에게 공유되고 AI가 루브릭 자동 생성</span>
             </label>
-            <button
-              onClick={() => setShowGenerator(v => !v)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-150 ${
-                showGenerator
-                  ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
-                  : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 text-slate-500'
-              }`}
-            >
-              <Wand2 size={15} className={showGenerator ? 'text-indigo-500' : 'text-slate-300'} />
-              <div className="text-left">
-                <div className="text-xs font-600">강의계획서·가이드라인에서 채점 기준 자동 설계</div>
-                <div className="text-xs opacity-70">파일 업로드 또는 텍스트 붙여넣기 → AI가 루브릭 항목 생성</div>
+            {guidelineFile ? (
+              <div className="flex items-center gap-2 p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+                <FileText size={14} className="text-indigo-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-600 text-indigo-700 truncate">{guidelineFile.name}</div>
+                  <div className="text-xs text-indigo-400">{(guidelineFile.size / 1024).toFixed(1)} KB · 학생 공유 + AI 채점 기준 생성 완료</div>
+                </div>
+                <button
+                  onClick={() => { setGuidelineFile(null); setShowGenerator(false) }}
+                  className="text-slate-400 hover:text-red-500 transition-colors"
+                >
+                  <X size={13} />
+                </button>
               </div>
-              {showGenerator && <X size={13} className="ml-auto text-indigo-400" />}
-            </button>
+            ) : (
+              <button
+                onClick={() => setShowGenerator(v => !v)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-150 ${
+                  showGenerator
+                    ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 text-slate-500'
+                }`}
+              >
+                <Wand2 size={15} className={showGenerator ? 'text-indigo-500' : 'text-slate-300'} />
+                <div className="text-left">
+                  <div className="text-xs font-600">파일 업로드 → 학생 공유 + AI 루브릭 자동 생성</div>
+                  <div className="text-xs opacity-70">PDF · DOCX · HWP · TXT · 텍스트 직접 입력도 가능</div>
+                </div>
+                {showGenerator && <X size={13} className="ml-auto text-indigo-400" />}
+              </button>
+            )}
           </div>
 
           {/* Add rubric */}

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   CheckCircle2, Bell, AlertCircle, RefreshCw, Sparkles,
-  FileText, Image, File, ChevronDown, ChevronUp, Eye, Edit3,
+  FileText, Image, File, ChevronDown, ChevronUp, Eye, Edit3, Download,
 } from 'lucide-react'
 import { Button, Card, CardHeader, Badge, Avatar, Modal, StatCard } from '@/components/ui'
 
@@ -41,7 +41,7 @@ function getFileType(fileName: string): 'image' | 'pdf' | 'text' | 'other' {
   return 'other'
 }
 
-function FilePreview({ fileName }: { fileName: string }) {
+function FilePreview({ fileName, submissionId }: { fileName: string; submissionId: string }) {
   const type = getFileType(fileName)
   const icons: Record<typeof type, React.ReactNode> = {
     image: <Image size={14} className="text-emerald-500" />,
@@ -61,16 +61,19 @@ function FilePreview({ fileName }: { fileName: string }) {
         <div className="text-xs font-600 text-slate-700 truncate">{fileName}</div>
         <div className="text-xs text-slate-400">{labels[type]}</div>
       </div>
-      {(type === 'image' || type === 'pdf') && (
-        <div className="flex items-center gap-1 text-xs text-slate-400 bg-slate-100 rounded px-2 py-1 flex-shrink-0">
-          <Eye size={11} /><span>파일 서버 연동 시 미리보기 가능</span>
-        </div>
-      )}
+      <a
+        href={`/api/submissions/${submissionId}/file`}
+        download={fileName}
+        className="flex items-center gap-1 text-xs font-600 text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded px-2 py-1 flex-shrink-0 transition-colors"
+        onClick={e => e.stopPropagation()}
+      >
+        <Download size={11} /><span>다운로드</span>
+      </a>
     </div>
   )
 }
 
-function SubmissionContentViewer({ content, fileName }: { content: string | null; fileName: string | null }) {
+function SubmissionContentViewer({ content, fileName, submissionId }: { content: string | null; fileName: string | null; submissionId: string }) {
   const [expanded, setExpanded] = useState(true)
   const hasContent = content && content.trim().length > 0
   const hasFile = !!fileName
@@ -100,7 +103,7 @@ function SubmissionContentViewer({ content, fileName }: { content: string | null
       </button>
       {expanded && (
         <div className="p-4 space-y-3 bg-white">
-          {hasFile && <FilePreview fileName={fileName!} />}
+          {hasFile && <FilePreview fileName={fileName!} submissionId={submissionId} />}
           {hasContent ? (
             <div
               className="text-xs text-slate-700 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 max-h-52 overflow-y-auto"
@@ -221,6 +224,7 @@ export default function GradingTable({ assignmentId }: Props) {
                 feedback_short: editFeedback,
                 grade_status: 'confirmed',
                 is_published: andPublish ? 1 : s.is_published,
+                rubric_scores: editRubrics.length > 0 ? editRubrics : s.rubric_scores,
               }
             : s
         ))
@@ -402,7 +406,7 @@ export default function GradingTable({ assignmentId }: Props) {
       >
         {modal && (
           <div className="space-y-4">
-            <SubmissionContentViewer content={modal.content} fileName={modal.file_name} />
+            <SubmissionContentViewer content={modal.content} fileName={modal.file_name} submissionId={modal.id} />
 
             <div className="grid grid-cols-2 gap-3">
               <div>

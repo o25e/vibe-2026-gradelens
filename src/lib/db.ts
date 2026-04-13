@@ -94,5 +94,8 @@ db.exec(`
 try { db.exec(`ALTER TABLE grades ADD COLUMN is_published INTEGER NOT NULL DEFAULT 0`) } catch {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN updated_at TEXT`) } catch {}
 try { db.exec(`ALTER TABLE notifications ADD COLUMN assignment_id TEXT`) } catch {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN guideline_file_name TEXT`) } catch {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN guideline_file_path TEXT`) } catch {}
+try { db.exec(`ALTER TABLE submissions ADD COLUMN file_path TEXT`) } catch {}
 
 export default db

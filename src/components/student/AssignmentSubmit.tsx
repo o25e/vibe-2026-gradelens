@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { Upload, FileCheck, X, Sparkles, Clock, CheckCircle2, AlertCircle, File, RefreshCw, ChevronLeft, BookOpen } from 'lucide-react'
+import { Upload, FileCheck, X, Sparkles, Clock, CheckCircle2, AlertCircle, File, RefreshCw, ChevronLeft, BookOpen, Paperclip, Download } from 'lucide-react'
 import { Card, CardHeader, Badge, Button } from '@/components/ui'
 import type { AuthUser } from '@/lib/auth'
 
@@ -9,6 +9,7 @@ interface Assignment {
   id: string; title: string; description: string; course: string; deadline: string
   rubric_items: RubricItem[]
   created_at: string
+  guideline_file_name: string | null
 }
 
 const GRADING_MESSAGES = [
@@ -36,6 +37,7 @@ export default function AssignmentSubmit({
 
   const [content, setContent] = useState('')
   const [file, setFile] = useState<{ name: string; size: number } | null>(null)
+  const [fileObject, setFileObject] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [fileParsing, setFileParsing] = useState(false)
   const [fileParseError, setFileParseError] = useState<string | null>(null)
@@ -70,17 +72,16 @@ export default function AssignmentSubmit({
 
   const handleFileDrop = async (f: File) => {
     setFile({ name: f.name, size: f.size })
+    setFileObject(f)
     setFileParseError(null)
 
     const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
 
     if (ext === 'txt' || f.type === 'text/plain') {
-      // TXT: 브라우저에서 직접 읽기
       const reader = new FileReader()
       reader.onload = e => setContent(e.target?.result as string ?? '')
       reader.readAsText(f)
     } else if (['pdf', 'doc', 'docx', 'hwp'].includes(ext)) {
-      // PDF/DOCX/HWP: 서버 parse-file API로 텍스트 추출
       setFileParsing(true)
       try {
         const formData = new FormData()
@@ -92,6 +93,7 @@ export default function AssignmentSubmit({
       } catch (e) {
         setFileParseError((e as Error).message)
         setFile(null)
+        setFileObject(null)
       } finally {
         setFileParsing(false)
       }
@@ -103,6 +105,7 @@ export default function AssignmentSubmit({
     setSubmitted(false)
     setContent('')
     setFile(null)
+    setFileObject(null)
     setError(null)
     setFileParseError(null)
   }
@@ -116,6 +119,7 @@ export default function AssignmentSubmit({
       setSubmitted(false)
       setContent('')
       setFile(null)
+      setFileObject(null)
       setError(null)
       setFileParseError(null)
     }
@@ -143,6 +147,14 @@ export default function AssignmentSubmit({
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '제출에 실패했습니다.')
+
+      // 첨부 파일 바이너리를 서버에 저장 (교수가 다운로드할 수 있도록)
+      if (fileObject && data.submission_id) {
+        const fd = new FormData()
+        fd.append('file', fileObject)
+        await fetch(`/api/submissions/${data.submission_id}/file`, { method: 'POST', body: fd })
+      }
+
       setSubmitted(true)
     } catch (e) {
       setError((e as Error).message)
@@ -272,9 +284,20 @@ export default function AssignmentSubmit({
             </Badge>
           }
         />
-        <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 text-sm text-slate-600 leading-relaxed mb-4">
+        <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 text-sm text-slate-600 leading-relaxed mb-3">
           {selectedAssignment.description}
         </div>
+        {selectedAssignment.guideline_file_name && (
+          <a
+            href={`/api/assignments/${selectedAssignment.id}/guideline`}
+            download={selectedAssignment.guideline_file_name}
+            className="flex items-center gap-2 mb-4 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors w-fit"
+          >
+            <Paperclip size={13} className="text-indigo-500 flex-shrink-0" />
+            <span className="text-xs font-600 text-indigo-700 truncate max-w-[280px]">{selectedAssignment.guideline_file_name}</span>
+            <Download size={12} className="text-indigo-400 flex-shrink-0 ml-1" />
+          </a>
+        )}
         <div>
           <div className="text-xs font-700 text-slate-500 mb-2">
             <Sparkles size={11} className="inline mr-1 text-indigo-500" />
@@ -377,7 +400,7 @@ export default function AssignmentSubmit({
                   <div className="text-xs text-slate-400">{(file.size / 1024).toFixed(1)} KB · 텍스트 추출 완료</div>
                 </div>
                 {!submitting && (
-                  <button onClick={() => { setFile(null); setContent('') }} className="text-slate-400 hover:text-red-500 transition-colors">
+                  <button onClick={() => { setFile(null); setFileObject(null); setContent('') }} className="text-slate-400 hover:text-red-500 transition-colors">
                     <X size={13} />
                   </button>
                 )}

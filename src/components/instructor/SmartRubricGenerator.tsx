@@ -13,6 +13,7 @@ export type { AIRubricItem }
 interface Props {
   assignmentTitle?: string
   onApply: (rubrics: AIRubricItem[], totalScore: number) => void
+  onFile?: (file: File) => void
 }
 
 // ── Skeleton Row ──────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ function ScoreIndicator({ current, total }: { current: number; total: number }) 
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export default function SmartRubricGenerator({ assignmentTitle, onApply }: Props) {
+export default function SmartRubricGenerator({ assignmentTitle, onApply, onFile }: Props) {
   // Input
   const [extractedText, setExtractedText] = useState('')  // 파일에서 추출된 텍스트
   const [directInput, setDirectInput] = useState('')      // 교수 직접 입력
@@ -102,7 +103,8 @@ export default function SmartRubricGenerator({ assignmentTitle, onApply }: Props
       }
 
       setExtractedText(data.text as string)
-      setTextareaExpanded(true)   // 추출된 텍스트 자동으로 펼쳐서 보여줌
+      setTextareaExpanded(true)
+      onFile?.(f)   // 파싱 성공 시 파일 바이너리를 부모에 전달 (학생 공유용)
     } catch {
       setParseError('파일 전송 중 오류가 발생했습니다. 다시 시도해주세요.')
     } finally {
